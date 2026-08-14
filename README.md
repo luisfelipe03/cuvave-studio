@@ -6,6 +6,10 @@ Tank-G e futuros modelos), com geração de presets por IA.
 Sem instalação: abre o link no **Chrome ou Edge**, conecta o pedal via USB,
 edita, salva e compartilha.
 
+> 🚧 **Em desenvolvimento** — protocolo ainda não validado com hardware (ver
+> [Roadmap](#roadmap)). O que está descrito abaixo é o comportamento
+> pretendido, não o estado atual.
+
 > **Aviso**: este é um projeto pessoal de código aberto, **não afiliado** à
 > Cuvave nem à M-VAVE. O protocolo de comunicação foi descoberto por engenharia
 > reversa independente (ver [Referências](#referencias-e-agradecimentos)).
