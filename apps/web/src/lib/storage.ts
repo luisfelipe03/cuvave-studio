@@ -68,6 +68,8 @@ export interface LibraryEntry {
   explanation: string
   values: PresetValues
   createdAt: string
+  /** tokens consumidos na geração, quando a API informou */
+  tokens?: number
 }
 
 export function loadLibrary(profile: DeviceProfile): LibraryEntry[] {

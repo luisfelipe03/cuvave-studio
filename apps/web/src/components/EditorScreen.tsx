@@ -14,8 +14,11 @@ interface EditorScreenProps {
 
 /**
  * Painel de controle numa tela só — reflete o pedal físico, onde todos os
- * knobs e seletores ficam visíveis ao mesmo tempo, sem menus. IR e IA ficam
- * como painéis auxiliares ao lado (abaixo em telas estreitas).
+ * knobs e seletores ficam visíveis ao mesmo tempo, sem menus.
+ *
+ * A coluna auxiliar (IR + IA) cresce muito mais que o editor, então ela
+ * rola por dentro em vez de esticar a página: sem isso, usar a IA obrigava
+ * a descer a tela inteira deixando metade da janela vazia.
  */
 export function EditorScreen({
   profile,
@@ -34,7 +37,7 @@ export function EditorScreen({
         <PresetEditor profile={profile} state={presetsState} />
       </main>
 
-      <aside className="flex flex-col gap-6 lg:sticky lg:top-20 lg:h-fit">
+      <aside className="scroll-thin flex flex-col gap-4 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6.5rem)] lg:overflow-y-auto lg:pr-1">
         <IrPanel profile={profile} />
         <AiPanel
           profile={profile}

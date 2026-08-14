@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { FileAudio, UploadSimple } from '@phosphor-icons/react'
+import { CaretDown, FileAudio, UploadSimple } from '@phosphor-icons/react'
 import type { DeviceProfile } from 'profiles'
 
 interface IrPanelProps {
@@ -7,6 +7,7 @@ interface IrPanelProps {
 }
 
 export function IrPanel({ profile }: IrPanelProps) {
+  const [open, setOpen] = useState(false)
   const [slot, setSlot] = useState(1)
   const [distance, setDistance] = useState(60)
   const [file, setFile] = useState<File | null>(null)
@@ -16,17 +17,33 @@ export function IrPanel({ profile }: IrPanelProps) {
   return (
     <section
       aria-labelledby="ir-heading"
-      className="flex flex-col gap-5 rounded-2xl border border-line bg-panel p-6"
+      className="rounded-2xl border border-line bg-panel"
     >
-      <div className="flex items-center gap-2">
-        <FileAudio size={18} weight="bold" className="text-accent" />
-        <h2
-          id="ir-heading"
-          className="text-sm font-semibold tracking-wide uppercase"
+      <h2 id="ir-heading">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls="ir-body"
+          className="flex w-full cursor-pointer items-center gap-2 rounded-2xl p-5 text-left"
         >
-          Enviar IR ao pedal
-        </h2>
-      </div>
+          <FileAudio size={18} weight="bold" className="text-accent" />
+          <span className="flex-1 text-sm font-semibold tracking-wide uppercase">
+            Enviar IR ao pedal
+          </span>
+          <span className="text-[10px] tracking-wide text-faint uppercase">
+            M3
+          </span>
+          <CaretDown
+            size={13}
+            weight="bold"
+            className={`text-dim transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          />
+        </button>
+      </h2>
+
+      {open && (
+      <div id="ir-body" className="flex flex-col gap-5 px-5 pb-5">
 
       <div className="flex flex-col gap-2">
         <span id="ir-slot-label" className="text-xs font-medium text-dim">
@@ -123,6 +140,8 @@ export function IrPanel({ profile }: IrPanelProps) {
       >
         Enviar ao pedal (em breve)
       </button>
+      </div>
+      )}
     </section>
   )
 }

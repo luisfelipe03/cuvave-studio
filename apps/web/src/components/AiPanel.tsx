@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import {
   ArrowClockwise,
+  CaretDown,
   Guitar,
   Key,
   Sparkle,
@@ -9,7 +10,6 @@ import {
 } from '@phosphor-icons/react'
 import type { DeviceProfile, PresetValues } from 'profiles'
 import { DeepSeekError, generatePreset } from '../lib/deepseek'
-import type { GeneratedPreset } from '../lib/deepseek'
 import { loadLibrary, saveLibrary } from '../lib/storage'
 import type { LibraryEntry } from '../lib/storage'
 
@@ -24,7 +24,6 @@ interface AiPanelProps {
 type AiState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'done'; result: GeneratedPreset }
   | { kind: 'error'; message: string; keyProblem: boolean }
 
 /** Resumo legível: nome das opções + valores contínuos. */
@@ -61,6 +60,9 @@ export function AiPanel({
   const [library, setLibrary] = useState<LibraryEntry[]>(() =>
     loadLibrary(profile),
   )
+  // Um preset por vez fica aberto — o recém-gerado abre sozinho. Sem isso a
+  // lista viraria uma parede de texto conforme a coleção cresce.
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const loading = state.kind === 'loading'
@@ -85,19 +87,19 @@ export function AiPanel({
         guitar: guitar.trim() || undefined,
         signal: controller.signal,
       })
-      setState({ kind: 'done', result })
-      updateLibrary([
-        {
-          id: crypto.randomUUID(),
-          song: result.song,
-          name: result.name,
-          pickup: result.pickup,
-          explanation: result.explanation,
-          values: result.values,
-          createdAt: new Date().toISOString(),
-        },
-        ...library,
-      ])
+      const entry: LibraryEntry = {
+        id: crypto.randomUUID(),
+        song: result.song,
+        name: result.name,
+        pickup: result.pickup,
+        explanation: result.explanation,
+        values: result.values,
+        createdAt: new Date().toISOString(),
+        tokens: result.usage?.total,
+      }
+      updateLibrary([entry, ...library])
+      setExpandedId(entry.id)
+      setState({ kind: 'idle' })
     } catch (err) {
       const known = err instanceof DeepSeekError
       setState({
@@ -113,7 +115,7 @@ export function AiPanel({
   return (
     <section
       aria-labelledby="ai-heading"
-      className="flex flex-col gap-5 rounded-2xl border border-line bg-panel p-6"
+      className="flex flex-col gap-5 rounded-2xl border border-line bg-panel p-5"
     >
       <div className="flex items-center gap-2">
         <Sparkle size={18} weight="bold" className="text-accent" />
@@ -141,8 +143,8 @@ export function AiPanel({
         </div>
       )}
 
-      <div className="flex flex-col gap-4">
-        <label className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3">
+        <label className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-dim">
             Música <span aria-hidden="true">*</span>
             <span className="sr-only">(obrigatório)</span>
@@ -157,7 +159,7 @@ export function AiPanel({
             className="h-11 rounded-lg border border-line-strong bg-bg px-3.5 text-sm text-ink transition-colors placeholder:text-faint focus:border-accent"
           />
         </label>
-        <label className="flex flex-col gap-2">
+        <label className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-dim">
             Parte ou estilo (opcional)
           </span>
@@ -191,7 +193,7 @@ export function AiPanel({
         )}
       </button>
 
-      <div aria-live="polite" className="contents">
+      <div aria-live="polite">
         {state.kind === 'error' && (
           <div
             role="alert"
@@ -228,119 +230,131 @@ export function AiPanel({
             </div>
           </div>
         )}
-
-        {state.kind === 'done' && (
-          <div className="flex flex-col gap-4 border-t border-line pt-5">
-            <div>
-              <p className="text-sm font-medium text-ink">{state.result.name}</p>
-              <p className="text-xs text-dim">{state.result.song}</p>
-            </div>
-
-            {state.result.pickup && (
-              <p className="flex items-center gap-1.5 text-xs text-accent">
-                <Guitar size={14} weight="bold" />
-                Captador: {state.result.pickup}
-              </p>
-            )}
-
-            {(() => {
-              const { named, chips } = summarize(profile, state.result.values)
-              return (
-                <div className="rounded-lg border border-line bg-bg/60 p-3">
-                  <p className="text-[11px] leading-relaxed text-dim">
-                    {named.join(' · ')}
-                  </p>
-                  <p className="tabular mt-1 font-mono text-[10px] leading-relaxed text-faint">
-                    {chips.join(' · ')}
-                  </p>
-                </div>
-              )
-            })()}
-
-            {state.result.explanation && (
-              <p className="text-sm leading-relaxed text-dim">
-                {state.result.explanation}
-              </p>
-            )}
-
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-dim">Gravar em</span>
-              {profile.presetLabels.map((label, i) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => onApply(i, state.result.values)}
-                  aria-label={`Gravar no preset ${label}`}
-                  className="h-11 flex-1 cursor-pointer rounded-lg border border-accent/50 bg-accent/12 font-mono text-sm font-semibold text-accent transition-colors hover:bg-accent/25"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {state.result.usage && (
-              <p className="tabular text-center font-mono text-[10px] text-faint">
-                {state.result.usage.total.toLocaleString('pt-BR')} tokens
-                consumidos
-              </p>
-            )}
-          </div>
-        )}
       </div>
 
-      {library.length > 0 && (
-        <div className="flex flex-col gap-2 border-t border-line pt-5">
+      <div className="flex flex-col gap-2 border-t border-line pt-4">
+        <div className="flex items-baseline justify-between gap-2">
           <h3 className="text-[11px] font-medium tracking-wide text-dim uppercase">
-            Gerados ({library.length})
+            Presets gerados
           </h3>
+          {library.length > 0 && (
+            <span className="tabular font-mono text-[10px] text-faint">
+              {library.length}
+            </span>
+          )}
+        </div>
+
+        {library.length === 0 ? (
           <p className="text-xs leading-relaxed text-faint">
-            O pedal tem só {profile.presetCount} slots — escolha quais entram.
+            Nada gerado ainda. O que você criar fica guardado aqui — o pedal tem
+            só {profile.presetCount} slots, então dá pra montar a coleção e
+            decidir depois quais entram.
           </p>
-          <ul className="mt-1 flex flex-col gap-1.5">
-            {library.map((entry) => (
-              <li
-                key={entry.id}
-                className="flex flex-col gap-2 rounded-lg border border-line bg-bg/40 p-3"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-xs font-medium text-ink">
-                      {entry.song}
-                    </p>
-                    <p className="truncate text-[11px] text-dim">
-                      {entry.name}
-                      {entry.pickup && ` · captador ${entry.pickup}`}
-                    </p>
-                  </div>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {library.map((entry) => {
+              const expanded = expandedId === entry.id
+              const { named, chips } = summarize(profile, entry.values)
+              return (
+                <li
+                  key={entry.id}
+                  className={`overflow-hidden rounded-lg border bg-bg/40 transition-colors ${
+                    expanded ? 'border-accent/40' : 'border-line'
+                  }`}
+                >
                   <button
                     type="button"
-                    onClick={() =>
-                      updateLibrary(library.filter((e) => e.id !== entry.id))
-                    }
-                    aria-label={`Remover preset de ${entry.song}`}
-                    className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-faint transition-colors hover:bg-raised hover:text-danger"
+                    onClick={() => setExpandedId(expanded ? null : entry.id)}
+                    aria-expanded={expanded}
+                    className="flex w-full cursor-pointer items-center gap-2 p-3 text-left"
                   >
-                    <Trash size={13} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-medium text-ink">
+                        {entry.song}
+                      </span>
+                      <span className="block truncate text-[11px] text-dim">
+                        {entry.name}
+                        {entry.pickup && ` · captador ${entry.pickup}`}
+                      </span>
+                    </span>
+                    <CaretDown
+                      size={12}
+                      weight="bold"
+                      className={`shrink-0 text-dim transition-transform duration-200 ${
+                        expanded ? 'rotate-180' : ''
+                      }`}
+                    />
                   </button>
-                </div>
-                <div className="flex gap-1.5">
-                  {profile.presetLabels.map((label, i) => (
-                    <button
-                      key={label}
-                      type="button"
-                      onClick={() => onApply(i, entry.values)}
-                      aria-label={`Gravar ${entry.song} no preset ${label}`}
-                      className="h-9 flex-1 cursor-pointer rounded-md border border-line font-mono text-xs text-dim transition-colors hover:border-accent/50 hover:text-accent"
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </li>
-            ))}
+
+                  {expanded && (
+                    <div className="flex flex-col gap-3 px-3 pb-3">
+                      {entry.pickup && (
+                        <p className="flex items-center gap-1.5 text-xs text-accent">
+                          <Guitar size={14} weight="bold" />
+                          Captador: {entry.pickup}
+                        </p>
+                      )}
+
+                      <div className="rounded-md border border-line bg-panel p-2.5">
+                        <p className="text-[11px] leading-relaxed text-dim">
+                          {named.join(' · ')}
+                        </p>
+                        <p className="tabular mt-1 font-mono text-[10px] leading-relaxed text-faint">
+                          {chips.join(' · ')}
+                        </p>
+                      </div>
+
+                      {entry.explanation && (
+                        <p className="text-xs leading-relaxed text-dim">
+                          {entry.explanation}
+                        </p>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-dim">Gravar em</span>
+                        {profile.presetLabels.map((label, i) => (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => onApply(i, entry.values)}
+                            aria-label={`Gravar ${entry.song} no preset ${label}`}
+                            className="h-11 flex-1 cursor-pointer rounded-lg border border-accent/50 bg-accent/12 font-mono text-sm font-semibold text-accent transition-colors hover:bg-accent/25"
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2">
+                        {entry.tokens ? (
+                          <span className="tabular font-mono text-[10px] text-faint">
+                            {entry.tokens.toLocaleString('pt-BR')} tokens
+                          </span>
+                        ) : (
+                          <span />
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateLibrary(
+                              library.filter((e) => e.id !== entry.id),
+                            )
+                            setExpandedId(null)
+                          }}
+                          className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md px-2 text-[11px] text-faint transition-colors hover:text-danger"
+                        >
+                          <Trash size={12} />
+                          Remover
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              )
+            })}
           </ul>
-        </div>
-      )}
+        )}
+      </div>
     </section>
   )
 }
