@@ -1,18 +1,32 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowSquareOut,
+  ArrowClockwise,
   Check,
+  Crown,
   Eye,
   EyeSlash,
   Key,
+  ShieldCheck,
+  ShieldSlash,
   WarningCircle,
   X,
 } from '@phosphor-icons/react'
 import { DeepSeekError, validateKey } from '../lib/deepseek'
+import {
+  claimOwner,
+  listAccessDocs,
+  setAccessAllowed,
+} from '../lib/firebase'
+import type { AccessEntry } from '../lib/firebase'
+import type { User } from '../lib/firebase'
+import type { AiAccessState } from '../state/useAiAccess'
 
 interface SettingsDialogProps {
   initialKey: string
   initialGuitar: string
+  user: User | null
+  aiAccess: AiAccessState
   onSave: (key: string, guitar: string) => void
   onClose: () => void
 }
@@ -26,6 +40,8 @@ type CheckState =
 export function SettingsDialog({
   initialKey,
   initialGuitar,
+  user,
+  aiAccess,
   onSave,
   onClose,
 }: SettingsDialogProps) {
@@ -123,6 +139,9 @@ export function SettingsDialog({
         <div className="mt-5 flex flex-col gap-2">
           <label htmlFor="deepseek-key" className="text-xs font-medium text-dim">
             Chave da API DeepSeek
+            {aiAccess.allowed === true && (
+              <span className="text-faint"> (opcional)</span>
+            )}
           </label>
           <div className="flex gap-2">
             <input
@@ -153,6 +172,11 @@ export function SettingsDialog({
           <p id="key-help" className="text-xs leading-relaxed text-faint">
             Fica salva apenas neste navegador — nunca vai pro código nem pra um
             servidor.{' '}
+            {aiAccess.allowed === true && (
+              <span className="text-dim">
+                Sem chave, a geração usa a chave compartilhada do dono.{' '}
+              </span>
+            )}
             <a
               href="https://platform.deepseek.com/api_keys"
               target="_blank"
@@ -198,6 +222,12 @@ export function SettingsDialog({
           </p>
         </div>
 
+        {user && aiAccess.isOwner && <AccessAdmin />}
+
+        {user && !aiAccess.isOwner && !aiAccess.ownerExists && (
+          <ClaimOwner user={user} onClaimed={() => void aiAccess.refresh()} />
+        )}
+
         <div className="mt-5 flex flex-wrap justify-end gap-2">
           <button
             type="button"
@@ -234,5 +264,147 @@ export function SettingsDialog({
         </div>
       </div>
     </div>
+  )
+}
+
+/** Primeiro logado a reivindicar vira dono (as regras só permitem criar). */
+function ClaimOwner({
+  user,
+  onClaimed,
+}: {
+  user: User
+  onClaimed: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  return (
+    <section className="mt-5 flex flex-col items-start gap-2 rounded-lg border border-accent/30 bg-accent/5 p-3">
+      <p className="text-xs leading-relaxed text-dim">
+        Ninguém reivindicou o projeto ainda. Como você logou primeiro, pode se
+        tornar o dono — quem decide quem usa a chave compartilhada da IA.
+      </p>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true)
+          try {
+            await claimOwner(user)
+            onClaimed()
+          } finally {
+            setBusy(false)
+          }
+        }}
+        className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md text-xs font-medium text-accent transition-colors hover:underline disabled:opacity-45"
+      >
+        <Crown size={13} weight="bold" />
+        Reivindicar como dono
+      </button>
+    </section>
+  )
+}
+
+/** Painel do dono: aprova/revoga amigos pra usar a chave compartilhada. */
+function AccessAdmin() {
+  const [entries, setEntries] = useState<AccessEntry[] | null>(null)
+  const [error, setError] = useState(false)
+  const [busyUid, setBusyUid] = useState<string | null>(null)
+
+  const load = async () => {
+    setError(false)
+    try {
+      setEntries(await listAccessDocs())
+    } catch {
+      setError(true)
+    }
+  }
+
+  useEffect(() => {
+    void load()
+  }, [])
+
+  const toggle = async (entry: AccessEntry) => {
+    setBusyUid(entry.uid)
+    try {
+      await setAccessAllowed(entry.uid, !entry.allowed)
+      await load()
+    } catch {
+      setError(true)
+    } finally {
+      setBusyUid(null)
+    }
+  }
+
+  return (
+    <section className="mt-5 flex flex-col gap-2 border-t border-line pt-4">
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-xs font-medium text-dim uppercase">
+          <Crown size={13} weight="bold" className="text-accent" />
+          Acesso de amigos
+        </span>
+        <button
+          type="button"
+          onClick={() => void load()}
+          aria-label="Atualizar lista"
+          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-faint transition-colors hover:bg-raised hover:text-ink"
+        >
+          <ArrowClockwise size={13} />
+        </button>
+      </div>
+
+      {error && (
+        <p className="text-xs text-danger">
+          Não deu pra carregar a lista de pedidos.
+        </p>
+      )}
+
+      {entries !== null && entries.length === 0 && (
+        <p className="text-xs leading-relaxed text-faint">
+          Nenhum pedido ainda. Seus amigos pedem acesso no painel da IA, depois
+          de entrar com o Google.
+        </p>
+      )}
+
+      {entries !== null && entries.length > 0 && (
+        <ul className="flex flex-col gap-1.5">
+          {entries.map((e) => (
+            <li
+              key={e.uid}
+              className="flex items-center gap-2 rounded-lg border border-line bg-bg/60 p-2.5"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-medium text-ink">
+                  {e.name || 'Sem nome'}
+                </span>
+                <span className="block truncate text-[11px] text-faint">
+                  {e.email || e.uid.slice(0, 12)}
+                  {e.requestedAt &&
+                    ` · ${new Date(e.requestedAt).toLocaleDateString('pt-BR')}`}
+                </span>
+              </span>
+              <button
+                type="button"
+                disabled={busyUid === e.uid}
+                onClick={() => void toggle(e)}
+                className={`flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2.5 text-[11px] font-medium transition-colors disabled:opacity-45 ${
+                  e.allowed
+                    ? 'text-dim hover:text-danger'
+                    : 'text-accent hover:bg-accent/10'
+                }`}
+              >
+                {e.allowed ? (
+                  <>
+                    <ShieldSlash size={13} /> Revogar
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck size={13} /> Aprovar
+                  </>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }
