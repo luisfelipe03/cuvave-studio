@@ -14,7 +14,7 @@ edita, salva e compartilha.
 > Cuvave nem à M-VAVE. O protocolo de comunicação foi descoberto por engenharia
 > reversa independente (ver [Referências](#referencias-e-agradecimentos)).
 
-## ✨ Features
+## Features
 
 - **Editor de presets** — lê e escreve os 3 presets do Cube Baby (A/B/C)
 - **IRs** — importa arquivos WAV de cab sim pro pedal
