@@ -11,7 +11,9 @@ const PRESETS_KEY = 'cuvave-studio.presets.v1'
 const API_KEY_KEY = 'cuvave-studio.deepseek-key'
 const GUITAR_KEY = 'cuvave-studio.guitar'
 const LIBRARY_KEY = 'cuvave-studio.library.v1'
+const PLAYLISTS_KEY = 'cuvave-studio.playlists.v1'
 const LIBRARY_LIMIT = 30
+const PLAYLISTS_LIMIT = 20
 const UPDATED_AT_KEY = 'cuvave-studio.updated-at'
 
 export function loadPresets(profile: DeviceProfile): PresetValues[] {
@@ -100,6 +102,41 @@ export function saveLibrary(entries: LibraryEntry[]) {
   localStorage.setItem(
     LIBRARY_KEY,
     JSON.stringify(entries.slice(0, LIBRARY_LIMIT)),
+  )
+  touchLocal()
+}
+
+/**
+ * Playlists: listas ordenadas de presets da biblioteca, pensadas pra montar
+ * o pedal rápido — "aplicar" grava os 3 primeiros itens nos slots A/B/C na
+ * ordem da lista. Referenciam a biblioteca por id; item órfão (entrada
+ * apagada) é pulado na hora de aplicar.
+ */
+export interface Playlist {
+  id: string
+  name: string
+  entryIds: string[]
+  createdAt: string
+}
+
+export function loadPlaylists(): Playlist[] {
+  try {
+    const raw = localStorage.getItem(PLAYLISTS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as Playlist[]
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((p) => p && typeof p.name === 'string' && Array.isArray(p.entryIds))
+      .map((p) => ({ ...p, entryIds: p.entryIds.filter((id) => typeof id === 'string') }))
+  } catch {
+    return []
+  }
+}
+
+export function savePlaylists(playlists: Playlist[]) {
+  localStorage.setItem(
+    PLAYLISTS_KEY,
+    JSON.stringify(playlists.slice(0, PLAYLISTS_LIMIT)),
   )
   touchLocal()
 }

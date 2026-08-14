@@ -16,12 +16,15 @@ import { searchSongs } from '../lib/songSearch'
 import type { SongSuggestion } from '../lib/songSearch'
 import { saveLibrary } from '../lib/storage'
 import type { LibraryEntry } from '../lib/storage'
+import type { PlaylistsState } from '../state/usePlaylists'
+import { PlaylistSection } from './PlaylistSection'
 
 interface AiPanelProps {
   profile: DeviceProfile
   apiKey: string
   guitar: string
   library: LibraryEntry[]
+  playlists: PlaylistsState
   onLibraryChange: (entries: LibraryEntry[]) => void
   onApply: (slot: number, values: PresetValues) => void
   onOpenSettings: () => void
@@ -58,6 +61,7 @@ export function AiPanel({
   apiKey,
   guitar,
   library,
+  playlists,
   onLibraryChange,
   onApply,
   onOpenSettings,
@@ -475,19 +479,46 @@ export function AiPanel({
                         ) : (
                           <span />
                         )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            updateLibrary(
-                              library.filter((e) => e.id !== entry.id),
-                            )
-                            setExpandedId(null)
-                          }}
-                          className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md px-2 text-[11px] text-faint transition-colors hover:text-danger"
-                        >
-                          <Trash size={12} />
-                          Remover
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <select
+                            value=""
+                            aria-label={`Adicionar ${entry.song} a uma playlist`}
+                            onChange={(e) => {
+                              if (!e.target.value) return
+                              if (e.target.value === '__new') {
+                                const id = playlists.create()
+                                playlists.addEntry(id, entry.id)
+                              } else {
+                                playlists.addEntry(e.target.value, entry.id)
+                              }
+                              e.target.value = ''
+                            }}
+                            className="h-9 rounded-md border border-line bg-bg px-2 text-[11px] text-dim focus:border-accent focus:outline-none"
+                          >
+                            <option value="" disabled>
+                              Adicionar à playlist…
+                            </option>
+                            {playlists.playlists.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                            <option value="__new">+ Nova playlist</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateLibrary(
+                                library.filter((e) => e.id !== entry.id),
+                              )
+                              setExpandedId(null)
+                            }}
+                            className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md px-2 text-[11px] text-faint transition-colors hover:text-danger"
+                          >
+                            <Trash size={12} />
+                            Remover
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -497,6 +528,13 @@ export function AiPanel({
           </ul>
         )}
       </div>
+
+      <PlaylistSection
+        profile={profile}
+        library={library}
+        playlists={playlists}
+        onApply={onApply}
+      />
     </section>
   )
 }

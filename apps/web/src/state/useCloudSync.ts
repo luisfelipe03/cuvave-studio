@@ -14,9 +14,10 @@ import {
   localUpdatedAt,
   saveGuitar,
   saveLibrary,
+  savePlaylists,
   savePresets,
 } from '../lib/storage'
-import type { LibraryEntry } from '../lib/storage'
+import type { LibraryEntry, Playlist } from '../lib/storage'
 import type { PresetsState } from './usePresets'
 
 export type SyncStatus = 'signed-out' | 'merging' | 'synced' | 'error'
@@ -28,6 +29,8 @@ interface Options {
   presetsState: PresetsState
   library: LibraryEntry[]
   setLibrary: (entries: LibraryEntry[]) => void
+  playlists: Playlist[]
+  setPlaylists: (playlists: Playlist[]) => void
   guitar: string
   setGuitar: (guitar: string) => void
 }
@@ -44,6 +47,8 @@ export function useCloudSync({
   presetsState,
   library,
   setLibrary,
+  playlists,
+  setPlaylists,
   guitar,
   setGuitar,
 }: Options) {
@@ -79,7 +84,7 @@ export function useCloudSync({
 
         const merged = mergeCloud(
           cloud,
-          { presets: { [profile.id]: presets }, library, guitar },
+          { presets: { [profile.id]: presets }, library, playlists, guitar },
           localUpdatedAt(),
         )
 
@@ -90,6 +95,8 @@ export function useCloudSync({
         }
         setLibrary(merged.library)
         saveLibrary(merged.library)
+        setPlaylists(merged.playlists)
+        savePlaylists(merged.playlists)
         if (merged.guitar !== guitar) {
           setGuitar(merged.guitar)
           saveGuitar(merged.guitar)
@@ -120,6 +127,7 @@ export function useCloudSync({
       pushCloud(user.uid, {
         presets: { [profile.id]: presets },
         library,
+        playlists,
         guitar,
         updatedAt: Date.now(),
       })
@@ -127,7 +135,7 @@ export function useCloudSync({
         .catch(() => setStatus('error'))
     }, PUSH_DEBOUNCE_MS)
     return () => clearTimeout(id)
-  }, [user, profile, presets, library, guitar])
+  }, [user, profile, presets, library, playlists, guitar])
 
   const signIn = useCallback(async () => {
     setConnected(true)

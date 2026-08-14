@@ -1,6 +1,6 @@
 import type { User } from 'firebase/auth'
 import type { PresetValues } from 'profiles'
-import type { LibraryEntry } from './storage'
+import type { LibraryEntry, Playlist } from './storage'
 
 /**
  * Config web do Firebase.
@@ -98,11 +98,18 @@ export async function signOutUser(): Promise<void> {
 export interface CloudData {
   presets: Record<string, PresetValues[]>
   library: LibraryEntry[]
+  playlists: Playlist[]
   guitar: string
   updatedAt: number
 }
 
-const EMPTY: CloudData = { presets: {}, library: [], guitar: '', updatedAt: 0 }
+const EMPTY: CloudData = {
+  presets: {},
+  library: [],
+  playlists: [],
+  guitar: '',
+  updatedAt: 0,
+}
 
 export async function pullCloud(uid: string): Promise<CloudData> {
   const { db, dbApi } = await load()
@@ -112,6 +119,7 @@ export async function pullCloud(uid: string): Promise<CloudData> {
   return {
     presets: raw.presets ?? {},
     library: Array.isArray(raw.library) ? raw.library : [],
+    playlists: Array.isArray(raw.playlists) ? raw.playlists : [],
     guitar: typeof raw.guitar === 'string' ? raw.guitar : '',
     updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : 0,
   }
@@ -127,7 +135,8 @@ export async function pushCloud(uid: string, data: CloudData): Promise<void> {
 
 /**
  * Junta nuvem e local sem perder trabalho:
- * - biblioteca: união por id (gerar num aparelho e noutro não apaga nada)
+ * - biblioteca e playlists: união por id (gerar num aparelho e noutro não
+ *   apaga nada)
  * - presets e guitarra: vence o lado com `updatedAt` mais recente
  */
 export function mergeCloud(
@@ -147,11 +156,22 @@ export function mergeCloud(
     b.createdAt.localeCompare(a.createdAt),
   )
 
+  const playlistById = new Map<string, Playlist>()
+  for (const playlist of [...cloud.playlists, ...local.playlists]) {
+    const existing = playlistById.get(playlist.id)
+    if (!existing || playlist.createdAt >= existing.createdAt)
+      playlistById.set(playlist.id, playlist)
+  }
+  const playlists = [...playlistById.values()].sort((a, b) =>
+    a.createdAt.localeCompare(b.createdAt),
+  )
+
   return {
     presets: cloudNewer
       ? { ...local.presets, ...cloud.presets }
       : { ...cloud.presets, ...local.presets },
     library,
+    playlists,
     guitar: cloudNewer
       ? cloud.guitar || local.guitar
       : local.guitar || cloud.guitar,

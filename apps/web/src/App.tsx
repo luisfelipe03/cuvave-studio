@@ -3,6 +3,7 @@ import { cubeBabyProfile, profiles } from 'profiles'
 import { usePresets } from './state/usePresets'
 import { useDevice } from './state/useDevice'
 import { useCloudSync } from './state/useCloudSync'
+import { usePlaylists } from './state/usePlaylists'
 import {
   loadApiKey,
   loadGuitar,
@@ -43,11 +44,14 @@ export default function App() {
   }, [device.status.kind])
 
   // Login é opcional: sem ele o app roda inteiro no localStorage.
+  const playlistsState = usePlaylists()
   const cloud = useCloudSync({
     profile,
     presetsState,
     library,
     setLibrary,
+    playlists: playlistsState.playlists,
+    setPlaylists: playlistsState.setPlaylists,
     guitar,
     setGuitar,
   })
@@ -95,6 +99,7 @@ export default function App() {
             apiKey={apiKey}
             guitar={guitar}
             library={library}
+            playlists={playlistsState}
             onLibraryChange={setLibrary}
             onOpenSettings={() => setSettingsOpen(true)}
           />
