@@ -12,6 +12,8 @@ const START_ANGLE = 135
 const SWEEP = 270
 const RADIUS = 27
 const C = 2 * Math.PI * RADIUS
+const PIXELS_PER_SWEEP = 140
+const TRANSITION = 'transform 120ms cubic-bezier(0.25,0.46,0.45,0.94)'
 
 function zoneFor(param: Parameter, value: number) {
   return param.zones?.find((z) => value >= z.min && value <= z.max)
@@ -24,36 +26,40 @@ interface KnobProps {
 }
 
 export function Knob({ param, value, onChange }: KnobProps) {
-  const drag = useRef<{ startY: number; startValue: number } | null>(null)
-  const [dragging, setDragging] = useState(false)
+  const drag = useRef<{ startY: number; startT: number } | null>(null)
+  // t contínuo (0–1) só existe durante o arrasto — o ponteiro acompanha o
+  // mouse pixel a pixel em vez de pular de passo em passo. Fora do arrasto,
+  // o ângulo vem do valor real (já quantizado) e ganha transição suave.
+  const [dragT, setDragT] = useState<number | null>(null)
   const [focused, setFocused] = useState(false)
-  const t = (value - param.min) / (param.max - param.min)
+
+  const committedT = (value - param.min) / (param.max - param.min)
+  const t = dragT ?? committedT
   const angle = START_ANGLE + SWEEP * t
   const zone = zoneFor(param, value)
+  const dragging = dragT !== null
 
-  const setFromPointer = (clientY: number) => {
-    const d = drag.current
-    if (!d) return
-    const sensitivity = (param.max - param.min) / 140
-    const delta = Math.round((d.startY - clientY) * sensitivity)
-    onChange(Math.min(param.max, Math.max(param.min, d.startValue + delta)))
-  }
-
-  // Só entra em modo de arrasto com um pointerdown explícito — mover ou
-  // passar o mouse por cima nunca altera o valor sozinho.
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    drag.current = { startY: e.clientY, startValue: value }
-    setDragging(true)
+    drag.current = { startY: e.clientY, startT: committedT }
+    setDragT(committedT)
     e.currentTarget.setPointerCapture(e.pointerId)
   }
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (drag.current) setFromPointer(e.clientY)
+    const d = drag.current
+    if (!d) return
+    const nextT = Math.min(
+      1,
+      Math.max(0, d.startT + (d.startY - e.clientY) / PIXELS_PER_SWEEP),
+    )
+    setDragT(nextT)
+    const nextValue = Math.round(param.min + nextT * (param.max - param.min))
+    if (nextValue !== value) onChange(nextValue)
   }
 
   const endDrag = () => {
     drag.current = null
-    setDragging(false)
+    setDragT(null)
   }
 
   // Scroll do mouse só ajusta depois de um clique prévio (foco) — nunca
@@ -99,7 +105,8 @@ export function Knob({ param, value, onChange }: KnobProps) {
           width="64"
           height="64"
           viewBox="0 0 64 64"
-          className={dragging ? 'scale-[1.04] transition-transform' : 'transition-transform'}
+          className="transition-transform"
+          style={{ transform: dragging ? 'scale(1.04)' : undefined }}
         >
           {/* corpo recesso do knob */}
           <circle cx="32" cy="32" r="19" fill="var(--color-raised)" />
@@ -136,7 +143,10 @@ export function Knob({ param, value, onChange }: KnobProps) {
             strokeDasharray={`${(C * SWEEP * Math.max(t, 0.001)) / 360} ${C}`}
             transform={`rotate(${START_ANGLE} 32 32)`}
           />
-          {/* ponteiro */}
+          {/* ponteiro — a rotação é só CSS (nunca o atributo SVG `transform`,
+              que é ambíguo pra transicionar junto com CSS). Anima suave fora
+              do arrasto (teclado, IA, troca de preset); durante o arrasto
+              acompanha o mouse direto, sem atraso de transição */}
           <line
             x1="32"
             y1="32"
@@ -145,7 +155,12 @@ export function Knob({ param, value, onChange }: KnobProps) {
             stroke="var(--color-ink)"
             strokeWidth="2.5"
             strokeLinecap="round"
-            transform={`rotate(${angle + 90} 32 32)`}
+            style={{
+              transform: `rotate(${angle + 90}deg)`,
+              transformBox: 'view-box',
+              transformOrigin: '32px 32px',
+              transition: dragging ? 'none' : TRANSITION,
+            }}
           />
           <circle cx="32" cy="32" r="2.5" fill="var(--color-ink)" />
         </svg>
