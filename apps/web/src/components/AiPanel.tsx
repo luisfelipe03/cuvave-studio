@@ -77,10 +77,14 @@ export function AiPanel({
   const [suggestIndex, setSuggestIndex] = useState(0)
   // Artista confirmado ao escolher uma sugestão; entra no prompt da IA.
   const [pickedArtist, setPickedArtist] = useState<string | null>(null)
+  // Evita reabrir a busca quando o texto muda por causa de uma seleção —
+  // senão escolher "Like a Stone" dispararia nova busca e reabriria a lista.
+  const skipSearch = useRef(false)
 
   useEffect(() => {
     const q = song.trim()
-    if (q.length < 3) {
+    if (q.length < 3 || skipSearch.current) {
+      skipSearch.current = false
       setSuggestions([])
       setSuggestOpen(false)
       return
@@ -108,6 +112,7 @@ export function AiPanel({
   }, [song])
 
   const pickSuggestion = (s: SongSuggestion) => {
+    skipSearch.current = true
     setSong(s.title)
     setPickedArtist(s.artist === '—' ? null : s.artist)
     setSuggestOpen(false)
