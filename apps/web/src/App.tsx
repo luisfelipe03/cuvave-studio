@@ -3,7 +3,6 @@ import { cubeBabyProfile, profiles } from 'profiles'
 import { usePresets } from './state/usePresets'
 import { useDevice } from './state/useDevice'
 import { useCloudSync } from './state/useCloudSync'
-import { useAiAccess } from './state/useAiAccess'
 import {
   loadApiKey,
   loadGuitar,
@@ -53,9 +52,6 @@ export default function App() {
     setGuitar,
   })
 
-  // Quem pode usar a chave compartilhada da IA (dono/aprovados).
-  const aiAccess = useAiAccess(cloud.user)
-
   const unlocked = demo || device.status.kind === 'connected'
   const showEditor = screen === 'editor' && unlocked
 
@@ -99,10 +95,7 @@ export default function App() {
             apiKey={apiKey}
             guitar={guitar}
             library={library}
-            user={cloud.user}
-            aiAccess={aiAccess}
             onLibraryChange={setLibrary}
-            onSignIn={() => void cloud.signIn()}
             onOpenSettings={() => setSettingsOpen(true)}
           />
           <p className="mx-auto max-w-[1400px] px-4 pb-8 text-xs text-faint sm:px-6">
@@ -126,8 +119,6 @@ export default function App() {
         <SettingsDialog
           initialKey={apiKey}
           initialGuitar={guitar}
-          user={cloud.user}
-          aiAccess={aiAccess}
           onSave={(key, nextGuitar) => {
             saveApiKey(key)
             setApiKey(key)

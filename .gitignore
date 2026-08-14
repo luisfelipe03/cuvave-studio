@@ -6,4 +6,3 @@ dist/
 *.local
 .claude/settings.local.json
 .firebase/
-functions/lib/

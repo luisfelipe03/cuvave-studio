@@ -11,36 +11,6 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
-    function isOwner() {
-      return exists(/databases/$(database)/documents/config/app)
-        && get(/databases/$(database)/documents/config/app).data.ownerUid
-           == request.auth.uid;
-    }
-
-    // Quem controla a chave compartilhada. O primeiro usuário logado a
-    // reivindicar vira dono (create só se o doc ainda não existe); só o
-    // dono altera daí em diante.
-    match /config/app {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null
-        && request.resource.data.ownerUid == request.auth.uid
-        && !exists(/databases/$(database)/documents/config/app);
-      allow update, delete: if isOwner();
-    }
-
-    // Quem pode usar a chave compartilhada da DeepSeek.
-    // - Qualquer usuário logado cria o PRÓPRIO pedido (allowed=false).
-    // - Só o dono lê a lista toda, aprova (allowed=true) ou revoga.
-    // - O usuário lê o próprio registro pra saber se foi aprovado.
-    match /access/{uid} {
-      allow read: if request.auth != null
-        && (request.auth.uid == uid || isOwner());
-      allow create: if request.auth != null
-        && request.auth.uid == uid
-        && request.resource.data.allowed == false;
-      allow update, delete: if isOwner();
-    }
-
     // Nada mais é acessível.
     match /{document=**} {
       allow read, write: if false;

@@ -1,7 +1,6 @@
 import type { User } from 'firebase/auth'
 import type { PresetValues } from 'profiles'
 import type { LibraryEntry } from './storage'
-import type { GeneratedPreset } from './deepseek'
 
 /**
  * Config web do Firebase.
@@ -37,34 +36,23 @@ export function wasSignedIn(): boolean {
 let bundle: Promise<{
   auth: import('firebase/auth').Auth
   db: import('firebase/firestore').Firestore
-  functions: import('firebase/functions').Functions
   authApi: typeof import('firebase/auth')
   dbApi: typeof import('firebase/firestore')
-  functionsApi: typeof import('firebase/functions')
 }> | null = null
 
 function load() {
   if (!bundle) {
     bundle = (async () => {
-      const [{ initializeApp }, authApi, dbApi, functionsApi] =
-        await Promise.all([
-          import('firebase/app'),
-          import('firebase/auth'),
-          import('firebase/firestore'),
-          import('firebase/functions'),
-        ])
+      const [{ initializeApp }, authApi, dbApi] = await Promise.all([
+        import('firebase/app'),
+        import('firebase/auth'),
+        import('firebase/firestore'),
+      ])
       const app = initializeApp(firebaseConfig)
       const auth = authApi.getAuth(app)
       // Mantém a sessão entre recargas — senão teria que logar toda vez.
       await authApi.setPersistence(auth, authApi.browserLocalPersistence)
-      return {
-        auth,
-        db: dbApi.getFirestore(app),
-        functions: functionsApi.getFunctions(app),
-        authApi,
-        dbApi,
-        functionsApi,
-      }
+      return { auth, db: dbApi.getFirestore(app), authApi, dbApi }
     })()
   }
   return bundle
@@ -169,110 +157,4 @@ export function mergeCloud(
       : local.guitar || cloud.guitar,
     updatedAt: Math.max(cloud.updatedAt, localUpdatedAt),
   }
-}
-
-/* ------------------------------------------------------------------ */
-/* Chave compartilhada da DeepSeek (proxy na Cloud Function)           */
-/* ------------------------------------------------------------------ */
-
-export interface AiAccessInfo {
-  /** o usuário é o dono do projeto (config/app.ownerUid) */
-  isOwner: boolean
-  /** acesso à chave compartilhada; null = sem pedido/registro */
-  allowed: boolean | null
-  /** já existe um dono reivindicado (config/app existe) */
-  ownerExists: boolean
-}
-
-export interface CloudGenerateInput {
-  profileId: string
-  song: string
-  hint?: string
-  guitar?: string
-}
-
-/**
- * Gera preset usando a chave do dono via Cloud Function. A chave nunca
- * chega ao browser: o proxy valida a autorização e chama a DeepSeek.
- */
-export async function cloudGeneratePreset(
-  input: CloudGenerateInput,
-): Promise<GeneratedPreset> {
-  const { functions, functionsApi } = await load()
-  const call = functionsApi.httpsCallable(functions, 'generatePreset')
-  const res = await call(input)
-  return res.data as GeneratedPreset
-}
-
-/** Dono atual (ou null se ninguém reivindicou ainda). */
-export async function refreshAiAccess(user: User): Promise<AiAccessInfo> {
-  const { db, dbApi } = await load()
-  const configSnap = await dbApi.getDoc(dbApi.doc(db, 'config', 'app'))
-  const ownerExists = configSnap.exists()
-  const ownerUid = ownerExists
-    ? (configSnap.data().ownerUid as string | undefined)
-    : undefined
-  if (ownerUid === user.uid) {
-    return { isOwner: true, allowed: true, ownerExists }
-  }
-  const accessSnap = await dbApi.getDoc(dbApi.doc(db, 'access', user.uid))
-  return {
-    isOwner: false,
-    allowed:
-      accessSnap.exists() && accessSnap.data().allowed === true ? true : null,
-    ownerExists,
-  }
-}
-
-/** Primeiro logado a reivindicar vira dono (as regras só permitem criar). */
-export async function claimOwner(user: User): Promise<boolean> {
-  const { db, dbApi } = await load()
-  const ref = dbApi.doc(db, 'config', 'app')
-  const snap = await dbApi.getDoc(ref)
-  if (snap.exists()) return snap.data().ownerUid === user.uid
-  await dbApi.setDoc(ref, { ownerUid: user.uid })
-  return true
-}
-
-export async function requestAiAccess(user: User): Promise<'sent' | 'pending'> {
-  const { db, dbApi } = await load()
-  const ref = dbApi.doc(db, 'access', user.uid)
-  const snap = await dbApi.getDoc(ref)
-  if (snap.exists()) return 'pending'
-  await dbApi.setDoc(ref, {
-    email: user.email ?? '',
-    name: user.displayName ?? '',
-    requestedAt: Date.now(),
-    allowed: false,
-  })
-  return 'sent'
-}
-
-export interface AccessEntry {
-  uid: string
-  email: string
-  name: string
-  requestedAt: number | null
-  allowed: boolean
-}
-
-export async function listAccessDocs(): Promise<AccessEntry[]> {
-  const { db, dbApi } = await load()
-  const snap = await dbApi.getDocs(dbApi.collection(db, 'access'))
-  return snap.docs.map((d) => {
-    const data = d.data()
-    return {
-      uid: d.id,
-      email: typeof data.email === 'string' ? data.email : '',
-      name: typeof data.name === 'string' ? data.name : '',
-      requestedAt:
-        typeof data.requestedAt === 'number' ? data.requestedAt : null,
-      allowed: data.allowed === true,
-    }
-  })
-}
-
-export async function setAccessAllowed(uid: string, allowed: boolean) {
-  const { db, dbApi } = await load()
-  await dbApi.updateDoc(dbApi.doc(db, 'access', uid), { allowed })
 }

@@ -6,19 +6,12 @@ import {
   Guitar,
   Key,
   MagnifyingGlass,
-  SignIn,
   Sparkle,
   Trash,
   WarningCircle,
 } from '@phosphor-icons/react'
 import type { DeviceProfile, PresetValues } from 'profiles'
 import { DeepSeekError, generatePreset } from '../lib/deepseek'
-import {
-  cloudGeneratePreset,
-  requestAiAccess,
-} from '../lib/firebase'
-import type { AiAccessState } from '../state/useAiAccess'
-import type { User } from '../lib/firebase'
 import { searchSongs } from '../lib/songSearch'
 import type { SongSuggestion } from '../lib/songSearch'
 import { saveLibrary } from '../lib/storage'
@@ -29,18 +22,14 @@ interface AiPanelProps {
   apiKey: string
   guitar: string
   library: LibraryEntry[]
-  user: User | null
-  aiAccess: AiAccessState
   onLibraryChange: (entries: LibraryEntry[]) => void
   onApply: (slot: number, values: PresetValues) => void
-  onSignIn: () => void
   onOpenSettings: () => void
 }
 
 type AiState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'no-access' }
   | { kind: 'error'; message: string; keyProblem: boolean }
 
 /** Resumo legível: nome das opções + valores contínuos. */
@@ -69,11 +58,8 @@ export function AiPanel({
   apiKey,
   guitar,
   library,
-  user,
-  aiAccess,
   onLibraryChange,
   onApply,
-  onSignIn,
   onOpenSettings,
 }: AiPanelProps) {
   const [song, setSong] = useState('')
@@ -134,23 +120,6 @@ export function AiPanel({
 
   const loading = state.kind === 'loading'
 
-  // Chave própria tem prioridade; sem ela, a chave compartilhada do dono
-  // (via Cloud Function) só vale pra quem foi aprovado.
-  const hasOwnKey = apiKey.trim().length > 0
-  const canUseShared = !hasOwnKey && (aiAccess.isOwner || aiAccess.allowed === true)
-  const [accessRequested, setAccessRequested] = useState<'none' | 'sent'>('none')
-
-  const requestAccess = async () => {
-    if (!user) return
-    try {
-      await requestAiAccess(user)
-      setAccessRequested('sent')
-    } catch {
-      // regras/firebase fora do ar: o botão continua disponível
-      setAccessRequested('none')
-    }
-  }
-
   const updateLibrary = (next: LibraryEntry[]) => {
     onLibraryChange(next)
     saveLibrary(next)
@@ -163,31 +132,14 @@ export function AiPanel({
     abortRef.current = controller
     setState({ kind: 'loading' })
     try {
-      // Chave própria sempre vence: roda no browser, sem custo pro dono.
-      // Sem chave própria, a geração usa a chave compartilhada do dono
-      // via Cloud Function (exige login + autorização).
-      let result: Awaited<ReturnType<typeof generatePreset>>
-      if (hasOwnKey) {
-        result = await generatePreset({
-          apiKey,
-          profile,
-          song: pickedArtist ? `${song.trim()} (${pickedArtist})` : song.trim(),
-          hint: hint.trim() || undefined,
-          guitar: guitar.trim() || undefined,
-          signal: controller.signal,
-        })
-      } else if (canUseShared) {
-        result = await cloudGeneratePreset({
-          profileId: profile.id,
-          song: pickedArtist ? `${song.trim()} (${pickedArtist})` : song.trim(),
-          hint: hint.trim() || undefined,
-          guitar: guitar.trim() || undefined,
-        })
-      } else {
-        setState({ kind: 'no-access' })
-        return
-      }
-
+      const result = await generatePreset({
+        apiKey,
+        profile,
+        song: pickedArtist ? `${song.trim()} (${pickedArtist})` : song.trim(),
+        hint: hint.trim() || undefined,
+        guitar: guitar.trim() || undefined,
+        signal: controller.signal,
+      })
       const entry: LibraryEntry = {
         id: crypto.randomUUID(),
         song: result.song,
@@ -202,14 +154,6 @@ export function AiPanel({
       setExpandedId(entry.id)
       setState({ kind: 'idle' })
     } catch (err) {
-      // A Cloud Function devolve permission-denied quando o dono ainda não
-      // aprovou — trata como pedido de acesso, não como erro da API.
-      const code = (err as { code?: string }).code
-      if (code === 'functions/permission-denied') {
-        setState({ kind: 'no-access' })
-        void aiAccess.refresh()
-        return
-      }
       const known = err instanceof DeepSeekError
       setState({
         kind: 'error',
@@ -236,57 +180,20 @@ export function AiPanel({
         </h2>
       </div>
 
-      {!apiKey && !canUseShared && (
+      {!apiKey && (
         <div className="flex flex-col items-start gap-2 rounded-lg border border-line bg-bg/60 p-3">
           <p className="text-xs leading-relaxed text-dim">
-            Você pode gerar com a sua própria chave da DeepSeek (fica só neste
-            navegador) ou usar a chave compartilhada do dono do projeto.
+            A geração usa a sua chave da DeepSeek — ela fica só neste navegador.
           </p>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md text-xs font-medium text-accent transition-colors hover:underline"
-            >
-              <Key size={13} weight="bold" />
-              Configurar minha chave
-            </button>
-            {user ? (
-              accessRequested === 'none' ? (
-                <button
-                  type="button"
-                  onClick={requestAccess}
-                  className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md text-xs font-medium text-dim transition-colors hover:text-ink hover:underline"
-                >
-                  <SignIn size={13} weight="bold" />
-                  Pedir acesso à chave compartilhada
-                </button>
-              ) : (
-                <span className="text-xs text-ok">
-                  Pedido enviado — aguardando o dono aprovar
-                </span>
-              )
-            ) : (
-              <button
-                type="button"
-                onClick={onSignIn}
-                className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md text-xs font-medium text-dim transition-colors hover:text-ink hover:underline"
-              >
-                <SignIn size={13} weight="bold" />
-                Entrar com Google
-              </button>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md text-xs font-medium text-accent transition-colors hover:underline"
+          >
+            <Key size={13} weight="bold" />
+            Configurar chave
+          </button>
         </div>
-      )}
-
-      {!apiKey && canUseShared && (
-        <p className="flex items-center gap-1.5 text-xs text-ok">
-          <CheckCircle size={13} weight="fill" />
-          {aiAccess.isOwner
-            ? 'Você é o dono — a geração usa a chave compartilhada do servidor.'
-            : 'Acesso liberado pelo dono — a geração usa a chave compartilhada.'}
-        </p>
       )}
 
       <div className="flex flex-col gap-3">
@@ -429,59 +336,6 @@ export function AiPanel({
       </button>
 
       <div aria-live="polite">
-        {state.kind === 'no-access' && (
-          <div
-            role="alert"
-            className="flex flex-col items-start gap-2 rounded-lg border border-accent/30 bg-accent/5 p-3"
-          >
-            <p className="flex items-start gap-2 text-sm leading-relaxed text-ink">
-              <WarningCircle
-                size={16}
-                weight="fill"
-                className="mt-0.5 shrink-0 text-accent"
-              />
-              {user
-                ? 'Sua conta ainda não tem acesso à chave compartilhada. Peça acesso ao dono ou configure a sua própria chave.'
-                : 'Entre com o Google pra usar a chave compartilhada, ou configure a sua própria.'}
-            </p>
-            <div className="flex items-center gap-3 pl-6">
-              {user ? (
-                accessRequested === 'none' ? (
-                  <button
-                    type="button"
-                    onClick={requestAccess}
-                    className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md text-xs font-medium text-accent transition-colors hover:underline"
-                  >
-                    <SignIn size={13} weight="bold" />
-                    Pedir acesso
-                  </button>
-                ) : (
-                  <span className="text-xs text-ok">
-                    Pedido enviado — aguardando o dono aprovar
-                  </span>
-                )
-              ) : (
-                <button
-                  type="button"
-                  onClick={onSignIn}
-                  className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md text-xs font-medium text-accent transition-colors hover:underline"
-                >
-                  <SignIn size={13} weight="bold" />
-                  Entrar com Google
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={onOpenSettings}
-                className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md text-xs font-medium text-dim transition-colors hover:text-ink hover:underline"
-              >
-                <Key size={13} weight="bold" />
-                Configurar minha chave
-              </button>
-            </div>
-          </div>
-        )}
-
         {state.kind === 'error' && (
           <div
             role="alert"
