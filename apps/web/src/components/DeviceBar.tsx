@@ -1,6 +1,17 @@
-import { GearSix, WarningCircle, Waveform } from '@phosphor-icons/react'
+import {
+  CloudCheck,
+  CloudSlash,
+  CloudWarning,
+  GearSix,
+  SignIn,
+  SignOut,
+  WarningCircle,
+  Waveform,
+} from '@phosphor-icons/react'
 import type { DeviceProfile } from 'profiles'
 import type { DeviceStatus } from '../state/useDevice'
+import type { SyncStatus } from '../state/useCloudSync'
+import type { User } from '../lib/firebase'
 import { DeviceSelector } from './DeviceSelector'
 
 interface DeviceBarProps {
@@ -8,6 +19,10 @@ interface DeviceBarProps {
   profiles: DeviceProfile[]
   status: DeviceStatus
   demo: boolean
+  user: User | null
+  syncStatus: SyncStatus
+  onSignIn: () => void
+  onSignOut: () => void
   onOpenSettings: () => void
 }
 
@@ -31,6 +46,10 @@ export function DeviceBar({
   profiles,
   status,
   demo,
+  user,
+  syncStatus,
+  onSignIn,
+  onSignOut,
   onOpenSettings,
 }: DeviceBarProps) {
   const text = (() => {
@@ -88,6 +107,37 @@ export function DeviceBar({
               className="text-accent"
               aria-label="Web MIDI só existe em Chrome/Edge (Chromium)"
             />
+          )}
+          {user ? (
+            <button
+              type="button"
+              onClick={onSignOut}
+              title={`${user.email ?? 'Conectado'} — sair`}
+              className="flex h-11 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-xs text-dim transition-colors hover:bg-raised hover:text-ink"
+            >
+              {syncStatus === 'error' ? (
+                <CloudWarning size={16} className="text-accent" />
+              ) : syncStatus === 'merging' ? (
+                <CloudCheck size={16} className="animate-pulse text-dim" />
+              ) : (
+                <CloudCheck size={16} className="text-ok" />
+              )}
+              <span className="hidden max-w-[120px] truncate sm:inline">
+                {user.displayName ?? user.email}
+              </span>
+              <SignOut size={13} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onSignIn}
+              title="Entrar para sincronizar presets entre dispositivos"
+              className="flex h-11 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs text-dim transition-colors hover:bg-raised hover:text-ink"
+            >
+              <CloudSlash size={16} />
+              <span className="hidden sm:inline">Entrar</span>
+              <SignIn size={13} />
+            </button>
           )}
           <button
             type="button"

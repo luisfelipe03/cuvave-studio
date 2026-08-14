@@ -1,0 +1,19 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Cada usuário só enxerga e escreve a própria subárvore. Sem isso, um
+    // amigo logado conseguiria ler os dados de outro — vale lembrar que a
+    // config web do Firebase é pública por natureza, então quem protege os
+    // dados são estas regras, não a apiKey.
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Nada mais é acessível.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

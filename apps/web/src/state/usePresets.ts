@@ -56,6 +56,15 @@ export function usePresets(profile: DeviceProfile) {
 
   const dismissUndo = useCallback(() => setUndoable(null), [])
 
+  /** Substitui tudo sem criar ponto de desfazer — usado pela sincronização. */
+  const replaceAll = useCallback(
+    (next: PresetValues[]) => {
+      setPresets(next.map((p) => clampValues(profile, p)))
+      setDirty(false)
+    },
+    [profile],
+  )
+
   const persist = useCallback(() => {
     savePresets(profile, presets)
     setDirty(false)
@@ -73,6 +82,7 @@ export function usePresets(profile: DeviceProfile) {
       applyPreset,
       undoApply,
       dismissUndo,
+      replaceAll,
       persist,
     }),
     [
@@ -85,6 +95,7 @@ export function usePresets(profile: DeviceProfile) {
       applyPreset,
       undoApply,
       dismissUndo,
+      replaceAll,
       persist,
     ],
   )

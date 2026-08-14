@@ -2,12 +2,15 @@ import { useState } from 'react'
 import { cubeBabyProfile, profiles } from 'profiles'
 import { usePresets } from './state/usePresets'
 import { useDevice } from './state/useDevice'
+import { useCloudSync } from './state/useCloudSync'
 import {
   loadApiKey,
   loadGuitar,
+  loadLibrary,
   saveApiKey,
   saveGuitar,
 } from './lib/storage'
+import type { LibraryEntry } from './lib/storage'
 import { DeviceBar } from './components/DeviceBar'
 import { Home } from './components/Home'
 import { EditorScreen } from './components/EditorScreen'
@@ -20,7 +23,20 @@ export default function App() {
   const [demo, setDemo] = useState(false)
   const [apiKey, setApiKey] = useState(loadApiKey)
   const [guitar, setGuitar] = useState(loadGuitar)
+  const [library, setLibrary] = useState<LibraryEntry[]>(() =>
+    loadLibrary(profile),
+  )
   const [settingsOpen, setSettingsOpen] = useState(false)
+
+  // Login é opcional: sem ele o app roda inteiro no localStorage.
+  const cloud = useCloudSync({
+    profile,
+    presetsState,
+    library,
+    setLibrary,
+    guitar,
+    setGuitar,
+  })
 
   const unlocked = demo || device.status.kind === 'connected'
 
@@ -32,6 +48,10 @@ export default function App() {
           profiles={profiles}
           status={device.status}
           demo={demo}
+          user={cloud.user}
+          syncStatus={cloud.status}
+          onSignIn={cloud.signIn}
+          onSignOut={cloud.signOut}
           onOpenSettings={() => setSettingsOpen(true)}
         />
       )}
@@ -43,6 +63,8 @@ export default function App() {
             presetsState={presetsState}
             apiKey={apiKey}
             guitar={guitar}
+            library={library}
+            onLibraryChange={setLibrary}
             onOpenSettings={() => setSettingsOpen(true)}
           />
           <p className="mx-auto max-w-[1400px] px-4 pb-8 text-xs text-faint sm:px-6">

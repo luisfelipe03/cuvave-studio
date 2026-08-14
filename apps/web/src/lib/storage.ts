@@ -12,6 +12,7 @@ const API_KEY_KEY = 'cuvave-studio.deepseek-key'
 const GUITAR_KEY = 'cuvave-studio.guitar'
 const LIBRARY_KEY = 'cuvave-studio.library.v1'
 const LIBRARY_LIMIT = 30
+const UPDATED_AT_KEY = 'cuvave-studio.updated-at'
 
 export function loadPresets(profile: DeviceProfile): PresetValues[] {
   try {
@@ -25,6 +26,15 @@ export function loadPresets(profile: DeviceProfile): PresetValues[] {
   }
 }
 
+/** Marca quando os dados locais mudaram — usado pra resolver conflito com a nuvem. */
+export function touchLocal() {
+  localStorage.setItem(UPDATED_AT_KEY, String(Date.now()))
+}
+
+export function localUpdatedAt(): number {
+  return Number(localStorage.getItem(UPDATED_AT_KEY) ?? 0)
+}
+
 export function savePresets(profile: DeviceProfile, presets: PresetValues[]) {
   const payload: SavedPresets = {
     version: 1,
@@ -32,6 +42,7 @@ export function savePresets(profile: DeviceProfile, presets: PresetValues[]) {
     presets: presets.map((p) => clampValues(profile, p)),
   }
   localStorage.setItem(PRESETS_KEY, JSON.stringify(payload))
+  touchLocal()
 }
 
 export function loadApiKey(): string {
@@ -53,6 +64,7 @@ export function loadGuitar(): string {
 
 export function saveGuitar(guitar: string) {
   localStorage.setItem(GUITAR_KEY, guitar.trim())
+  touchLocal()
 }
 
 /**
@@ -89,6 +101,7 @@ export function saveLibrary(entries: LibraryEntry[]) {
     LIBRARY_KEY,
     JSON.stringify(entries.slice(0, LIBRARY_LIMIT)),
   )
+  touchLocal()
 }
 
 export function initialPresets(profile: DeviceProfile): PresetValues[] {

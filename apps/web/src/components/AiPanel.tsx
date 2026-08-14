@@ -10,13 +10,15 @@ import {
 } from '@phosphor-icons/react'
 import type { DeviceProfile, PresetValues } from 'profiles'
 import { DeepSeekError, generatePreset } from '../lib/deepseek'
-import { loadLibrary, saveLibrary } from '../lib/storage'
+import { saveLibrary } from '../lib/storage'
 import type { LibraryEntry } from '../lib/storage'
 
 interface AiPanelProps {
   profile: DeviceProfile
   apiKey: string
   guitar: string
+  library: LibraryEntry[]
+  onLibraryChange: (entries: LibraryEntry[]) => void
   onApply: (slot: number, values: PresetValues) => void
   onOpenSettings: () => void
 }
@@ -51,15 +53,14 @@ export function AiPanel({
   profile,
   apiKey,
   guitar,
+  library,
+  onLibraryChange,
   onApply,
   onOpenSettings,
 }: AiPanelProps) {
   const [song, setSong] = useState('')
   const [hint, setHint] = useState('')
   const [state, setState] = useState<AiState>({ kind: 'idle' })
-  const [library, setLibrary] = useState<LibraryEntry[]>(() =>
-    loadLibrary(profile),
-  )
   // Um preset por vez fica aberto — o recém-gerado abre sozinho. Sem isso a
   // lista viraria uma parede de texto conforme a coleção cresce.
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -68,7 +69,7 @@ export function AiPanel({
   const loading = state.kind === 'loading'
 
   const updateLibrary = (next: LibraryEntry[]) => {
-    setLibrary(next)
+    onLibraryChange(next)
     saveLibrary(next)
   }
 

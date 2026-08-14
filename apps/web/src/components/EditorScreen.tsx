@@ -1,4 +1,5 @@
 import type { DeviceProfile, PresetValues } from 'profiles'
+import type { LibraryEntry } from '../lib/storage'
 import type { PresetsState } from '../state/usePresets'
 import { PresetEditor } from './PresetEditor'
 import { IrPanel } from './IrPanel'
@@ -9,6 +10,8 @@ interface EditorScreenProps {
   presetsState: PresetsState
   apiKey: string
   guitar: string
+  library: LibraryEntry[]
+  onLibraryChange: (entries: LibraryEntry[]) => void
   onOpenSettings: () => void
 }
 
@@ -25,6 +28,8 @@ export function EditorScreen({
   presetsState,
   apiKey,
   guitar,
+  library,
+  onLibraryChange,
   onOpenSettings,
 }: EditorScreenProps) {
   const onApplyAiPreset = (slot: number, values: PresetValues) => {
@@ -43,6 +48,8 @@ export function EditorScreen({
           profile={profile}
           apiKey={apiKey}
           guitar={guitar}
+          library={library}
+          onLibraryChange={onLibraryChange}
           onApply={onApplyAiPreset}
           onOpenSettings={onOpenSettings}
         />
