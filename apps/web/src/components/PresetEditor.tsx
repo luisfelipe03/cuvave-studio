@@ -24,7 +24,7 @@ const CHAIN: { id: string; label: string; isOn: (v: number) => boolean }[] = [
 ]
 
 export function PresetEditor({ profile, state }: PresetEditorProps) {
-  const { activePreset: values, active, dirty, canUndo } = state
+  const { activePreset: values, active, dirty, undoLabel } = state
   const knobs = profile.parameters.filter((p) => !p.options)
   const selectors = profile.parameters.filter((p) => p.options)
 
@@ -76,12 +76,12 @@ export function PresetEditor({ profile, state }: PresetEditorProps) {
         </div>
       </div>
 
-      {/* Volta atrás depois que a IA sobrescreve os três presets de uma vez */}
+      {/* Volta atrás depois que um preset da IA sobrescreve um slot */}
       <div aria-live="polite">
-        {canUndo && (
+        {undoLabel && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-accent/30 bg-accent/8 px-4 py-2.5">
             <span className="text-xs text-ink">
-              Presets da IA aplicados aos {profile.presetCount} slots.
+              Preset {undoLabel} substituído pelo da IA.
             </span>
             <div className="flex items-center gap-1">
               <button

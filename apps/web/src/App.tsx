@@ -2,7 +2,12 @@ import { useState } from 'react'
 import { cubeBabyProfile, profiles } from 'profiles'
 import { usePresets } from './state/usePresets'
 import { useDevice } from './state/useDevice'
-import { loadApiKey, saveApiKey } from './lib/storage'
+import {
+  loadApiKey,
+  loadGuitar,
+  saveApiKey,
+  saveGuitar,
+} from './lib/storage'
 import { DeviceBar } from './components/DeviceBar'
 import { Home } from './components/Home'
 import { EditorScreen } from './components/EditorScreen'
@@ -14,6 +19,7 @@ export default function App() {
   const device = useDevice(profile)
   const [demo, setDemo] = useState(false)
   const [apiKey, setApiKey] = useState(loadApiKey)
+  const [guitar, setGuitar] = useState(loadGuitar)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   const unlocked = demo || device.status.kind === 'connected'
@@ -36,6 +42,7 @@ export default function App() {
             profile={profile}
             presetsState={presetsState}
             apiKey={apiKey}
+            guitar={guitar}
             onOpenSettings={() => setSettingsOpen(true)}
           />
           <p className="mx-auto max-w-[1400px] px-4 pb-8 text-xs text-faint sm:px-6">
@@ -55,9 +62,12 @@ export default function App() {
       {settingsOpen && (
         <SettingsDialog
           initialKey={apiKey}
-          onSave={(key) => {
+          initialGuitar={guitar}
+          onSave={(key, nextGuitar) => {
             saveApiKey(key)
             setApiKey(key)
+            saveGuitar(nextGuitar)
+            setGuitar(nextGuitar)
           }}
           onClose={() => setSettingsOpen(false)}
         />

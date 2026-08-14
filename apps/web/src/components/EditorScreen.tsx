@@ -8,6 +8,7 @@ interface EditorScreenProps {
   profile: DeviceProfile
   presetsState: PresetsState
   apiKey: string
+  guitar: string
   onOpenSettings: () => void
 }
 
@@ -20,10 +21,11 @@ export function EditorScreen({
   profile,
   presetsState,
   apiKey,
+  guitar,
   onOpenSettings,
 }: EditorScreenProps) {
-  const onApplyAiPresets = (presets: PresetValues[]) => {
-    presetsState.applyPresets(presets)
+  const onApplyAiPreset = (slot: number, values: PresetValues) => {
+    presetsState.applyPreset(slot, values)
   }
 
   return (
@@ -37,7 +39,8 @@ export function EditorScreen({
         <AiPanel
           profile={profile}
           apiKey={apiKey}
-          onApply={onApplyAiPresets}
+          guitar={guitar}
+          onApply={onApplyAiPreset}
           onOpenSettings={onOpenSettings}
         />
       </aside>

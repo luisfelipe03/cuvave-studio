@@ -9,6 +9,9 @@ export interface SavedPresets {
 
 const PRESETS_KEY = 'cuvave-studio.presets.v1'
 const API_KEY_KEY = 'cuvave-studio.deepseek-key'
+const GUITAR_KEY = 'cuvave-studio.guitar'
+const LIBRARY_KEY = 'cuvave-studio.library.v1'
+const LIBRARY_LIMIT = 30
 
 export function loadPresets(profile: DeviceProfile): PresetValues[] {
   try {
@@ -41,6 +44,49 @@ export function saveApiKey(key: string) {
 
 export function hasStoredPresets(): boolean {
   return localStorage.getItem(PRESETS_KEY) !== null
+}
+
+/** Guitarra do usuário — usada pra sugerir posição de captador. */
+export function loadGuitar(): string {
+  return localStorage.getItem(GUITAR_KEY) ?? ''
+}
+
+export function saveGuitar(guitar: string) {
+  localStorage.setItem(GUITAR_KEY, guitar.trim())
+}
+
+/**
+ * Biblioteca de presets gerados: cada geração fica guardada com o nome da
+ * música, então dá pra montar uma coleção e depois decidir quais entram nos
+ * slots do pedal (que são poucos).
+ */
+export interface LibraryEntry {
+  id: string
+  song: string
+  name: string
+  pickup: string
+  explanation: string
+  values: PresetValues
+  createdAt: string
+}
+
+export function loadLibrary(profile: DeviceProfile): LibraryEntry[] {
+  try {
+    const raw = localStorage.getItem(LIBRARY_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as LibraryEntry[]
+    if (!Array.isArray(parsed)) return []
+    return parsed.map((e) => ({ ...e, values: clampValues(profile, e.values) }))
+  } catch {
+    return []
+  }
+}
+
+export function saveLibrary(entries: LibraryEntry[]) {
+  localStorage.setItem(
+    LIBRARY_KEY,
+    JSON.stringify(entries.slice(0, LIBRARY_LIMIT)),
+  )
 }
 
 export function initialPresets(profile: DeviceProfile): PresetValues[] {

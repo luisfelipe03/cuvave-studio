@@ -12,7 +12,8 @@ import { DeepSeekError, validateKey } from '../lib/deepseek'
 
 interface SettingsDialogProps {
   initialKey: string
-  onSave: (key: string) => void
+  initialGuitar: string
+  onSave: (key: string, guitar: string) => void
   onClose: () => void
 }
 
@@ -24,10 +25,12 @@ type CheckState =
 
 export function SettingsDialog({
   initialKey,
+  initialGuitar,
   onSave,
   onClose,
 }: SettingsDialogProps) {
   const [key, setKey] = useState(initialKey)
+  const [guitar, setGuitar] = useState(initialGuitar)
   const [visible, setVisible] = useState(false)
   const [check, setCheck] = useState<CheckState>({ kind: 'idle' })
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -177,7 +180,25 @@ export function SettingsDialog({
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap justify-end gap-2">
+        <div className="mt-5 flex flex-col gap-2">
+          <label htmlFor="guitar" className="text-xs font-medium text-dim">
+            Sua guitarra (opcional)
+          </label>
+          <input
+            id="guitar"
+            type="text"
+            value={guitar}
+            onChange={(e) => setGuitar(e.target.value)}
+            placeholder="Tagima Sixmart HSS"
+            aria-describedby="guitar-help"
+            className="h-11 rounded-lg border border-line-strong bg-bg px-3.5 text-sm text-ink transition-colors placeholder:text-faint focus:border-accent"
+          />
+          <p id="guitar-help" className="text-xs leading-relaxed text-faint">
+            A IA usa isso pra sugerir a posição de captador junto com o preset.
+          </p>
+        </div>
+
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
           <button
             type="button"
             onClick={runCheck}
@@ -203,7 +224,7 @@ export function SettingsDialog({
           <button
             type="button"
             onClick={() => {
-              onSave(key)
+              onSave(key, guitar)
               onClose()
             }}
             className="h-11 cursor-pointer rounded-lg bg-accent px-5 text-sm font-semibold text-accent-ink transition-colors duration-200 hover:bg-accent-strong"

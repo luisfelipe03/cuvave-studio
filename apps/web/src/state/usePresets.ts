@@ -14,9 +14,11 @@ export function usePresets(profile: DeviceProfile) {
   )
   const [active, setActive] = useState(0)
   const [dirty, setDirty] = useState(false)
-  // Snapshot do estado anterior a uma aplicação em lote (IA) — aplicar
-  // sobrescreve os três presets de uma vez, então precisa ter volta.
-  const [undoable, setUndoable] = useState<PresetValues[] | null>(null)
+  // Snapshot anterior a uma aplicação vinda da IA, pra ter volta.
+  const [undoable, setUndoable] = useState<{
+    presets: PresetValues[]
+    label: string
+  } | null>(null)
 
   const activePreset = presets[active]
 
@@ -32,12 +34,14 @@ export function usePresets(profile: DeviceProfile) {
     [active, profile],
   )
 
-  const applyPresets = useCallback(
-    (next: PresetValues[]) => {
+  /** Escreve um preset gerado num slot específico, sem tocar nos outros. */
+  const applyPreset = useCallback(
+    (index: number, values: PresetValues) => {
       setPresets((prev) => {
-        setUndoable(prev)
-        return next.map((p) => clampValues(profile, p))
+        setUndoable({ presets: prev, label: profile.presetLabels[index] })
+        return prev.map((p, i) => (i === index ? clampValues(profile, values) : p))
       })
+      setActive(index)
       setDirty(true)
     },
     [profile],
@@ -45,7 +49,7 @@ export function usePresets(profile: DeviceProfile) {
 
   const undoApply = useCallback(() => {
     setUndoable((prev) => {
-      if (prev) setPresets(prev)
+      if (prev) setPresets(prev.presets)
       return null
     })
   }, [])
@@ -63,10 +67,10 @@ export function usePresets(profile: DeviceProfile) {
       active,
       activePreset,
       dirty,
-      canUndo: undoable !== null,
+      undoLabel: undoable?.label ?? null,
       setActive,
       setParam,
-      applyPresets,
+      applyPreset,
       undoApply,
       dismissUndo,
       persist,
@@ -78,7 +82,7 @@ export function usePresets(profile: DeviceProfile) {
       dirty,
       undoable,
       setParam,
-      applyPresets,
+      applyPreset,
       undoApply,
       dismissUndo,
       persist,

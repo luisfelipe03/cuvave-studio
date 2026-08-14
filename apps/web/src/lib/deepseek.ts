@@ -87,7 +87,10 @@ export async function validateKey(apiKey: string): Promise<void> {
   if (!res.ok) throw errorForStatus(res.status)
 }
 
-export function buildSystemPrompt(profile: DeviceProfile): string {
+export function buildSystemPrompt(
+  profile: DeviceProfile,
+  guitar?: string,
+): string {
   const params = profile.parameters
     .map((p) => {
       if (p.options) {
@@ -102,12 +105,13 @@ export function buildSystemPrompt(profile: DeviceProfile): string {
     .join('\n')
 
   return [
-    `Você é um guitarrista experiente montando presets na pedaleira ${profile.name} (Cuvave/M-VAVE).`,
+    `Você é um guitarrista experiente montando UM preset na pedaleira ${profile.name} (Cuvave/M-VAVE).`,
     ``,
     `Cadeia de efeitos (fixa): Tuner → Preamp → Phaser/Chorus → Delay → Reverb → IR CAB.`,
-    `A pedaleira tem ${profile.presetCount} presets: ${profile.presetLabels.join(', ')}.`,
     ``,
-    `Parâmetros de cada preset — use SOMENTE inteiros dentro dos limites:`,
+    `Parâmetros — use SOMENTE inteiros dentro dos limites indicados. Os nomes de`,
+    `preamp e gabinete abaixo são os REAIS desta pedaleira: não invente outros`,
+    `nem use nomes parecidos de outras marcas.`,
     params,
     ``,
     `Semântica de desligado (importante):`,
@@ -116,22 +120,29 @@ export function buildSystemPrompt(profile: DeviceProfile): string {
     `- mod entre 7 e 8 desliga a modulação (0-6 = chorus, 9-15 = phaser)`,
     `- ir_cab=0 desliga o simulador de gabinete`,
     ``,
-    `Os três presets devem funcionar como um conjunto para tocar a música do início ao fim`,
-    `(por exemplo: base/ritmo, solo com mais ganho e delay, e um limpo para partes suaves).`,
+    guitar
+      ? `A guitarra é: ${guitar}. Sugira a posição de captador que melhor serve a música nessa guitarra.`
+      : `Sugira a posição de captador (braço, meio ou ponte) que melhor serve a música.`,
     ``,
     `Responda SOMENTE com JSON válido, sem markdown, neste formato:`,
-    `{"presets":{"a":{...},"b":{...},"c":{...}},"names":{"a":"...","b":"...","c":"..."},"explanation":"..."}`,
+    `{"name":"...","pickup":"...","preset":{...},"explanation":"..."}`,
     ``,
-    `- "presets": todos os parâmetros listados acima, em cada um dos três.`,
-    `- "names": rótulo curto (1-3 palavras) do papel de cada preset na música.`,
-    `- "explanation": em português do Brasil, explique as escolhas citando os valores`,
-    `  concretos e o porquê para ESTA música. Seja específico, sem encher linguiça.`,
+    `- "name": rótulo curto (1-3 palavras) do timbre, ex: "Clean chorus", "Blues lead".`,
+    `- "pickup": posição do captador em 1-2 palavras, ex: "braço", "ponte".`,
+    `- "preset": TODOS os parâmetros listados acima.`,
+    `- "explanation": 2-3 frases em português do Brasil, citando os valores concretos`,
+    `  e por que servem para ESTA música. Direto ao ponto, sem encher linguiça.`,
   ].join('\n')
 }
 
-export interface GeneratedPresets {
-  presets: PresetValues[]
-  names: string[]
+export interface GeneratedPreset {
+  /** música pedida, guardada junto pra montar a biblioteca */
+  song: string
+  /** rótulo curto do timbre, ex: "Clean chorus" */
+  name: string
+  /** posição de captador sugerida, ex: "braço" */
+  pickup: string
+  values: PresetValues
   explanation: string
   usage?: { prompt: number; completion: number; total: number }
 }
@@ -155,14 +166,15 @@ function stripFences(text: string): string {
     .trim()
 }
 
-export async function generatePresets(opts: {
+export async function generatePreset(opts: {
   apiKey: string
   profile: DeviceProfile
   song: string
   hint?: string
+  guitar?: string
   signal?: AbortSignal
-}): Promise<GeneratedPresets> {
-  const { apiKey, profile, song, hint, signal } = opts
+}): Promise<GeneratedPreset> {
+  const { apiKey, profile, song, hint, guitar, signal } = opts
   const key = apiKey.trim()
   if (!key)
     throw new DeepSeekError(
@@ -187,10 +199,10 @@ export async function generatePresets(opts: {
         response_format: { type: 'json_object' },
         temperature: 1.0,
         messages: [
-          { role: 'system', content: buildSystemPrompt(profile) },
+          { role: 'system', content: buildSystemPrompt(profile, guitar) },
           {
             role: 'user',
-            content: `Monte os ${profile.presetCount} presets para tocar "${song}".${
+            content: `Monte um preset para tocar "${song}".${
               hint ? ` Contexto extra do guitarrista: ${hint}` : ''
             }`,
           },
@@ -222,8 +234,9 @@ export async function generatePresets(opts: {
     )
 
   let parsed: {
-    presets?: Record<string, PresetValues>
-    names?: Record<string, string>
+    preset?: PresetValues
+    name?: string
+    pickup?: string
     explanation?: string
   }
   try {
@@ -235,31 +248,30 @@ export async function generatePresets(opts: {
     )
   }
 
-  if (!parsed.presets || typeof parsed.presets !== 'object')
+  if (!parsed.preset || typeof parsed.preset !== 'object')
     throw new DeepSeekError(
       'bad-response',
-      'A resposta da IA veio sem os presets. Tente gerar de novo.',
+      'A resposta da IA veio sem o preset. Tente gerar de novo.',
     )
 
   // Toda saída da IA passa por clamp contra o schema do profile antes de
-  // virar estado do app — valor fora de range nunca chega ao pedal.
-  const fallback = defaultPresetValues(profile)
-  const keys = profile.presetLabels.map((l) => l.toLowerCase())
-  const presets = keys.map((k) =>
-    clampValues(profile, { ...fallback, ...(parsed.presets?.[k] ?? {}) }),
-  )
-  const names = keys.map((k, i) => {
-    const raw = parsed.names?.[k]
-    return typeof raw === 'string' && raw.trim()
-      ? raw.trim().slice(0, 28)
-      : `Preset ${profile.presetLabels[i]}`
+  // virar estado do app. Isso não é decorativo: modelos erram os nomes e os
+  // índices de preamp/gabinete desta pedaleira com frequência, e o clamp
+  // garante que só valor válido do profile chegue ao pedal.
+  const values = clampValues(profile, {
+    ...defaultPresetValues(profile),
+    ...parsed.preset,
   })
 
+  const text = (raw: unknown, max: number, fallback: string) =>
+    typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, max) : fallback
+
   return {
-    presets,
-    names,
-    explanation:
-      typeof parsed.explanation === 'string' ? parsed.explanation : '',
+    song,
+    name: text(parsed.name, 28, 'Preset gerado'),
+    pickup: text(parsed.pickup, 16, ''),
+    values,
+    explanation: text(parsed.explanation, 600, ''),
     usage: data?.usage
       ? {
           prompt: data.usage.prompt_tokens ?? 0,
