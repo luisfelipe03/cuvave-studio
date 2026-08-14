@@ -90,9 +90,10 @@ export function DeviceBar({
             />
           )}
           <button
+            type="button"
             onClick={onOpenSettings}
-            aria-label="Configurações"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-dim transition-colors hover:bg-raised hover:text-ink"
+            aria-label="Abrir configurações"
+            className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-dim transition-colors hover:bg-raised hover:text-ink"
           >
             <GearSix size={17} />
           </button>

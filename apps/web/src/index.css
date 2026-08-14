@@ -12,17 +12,22 @@
   --color-panel: #1e1d21;
   --color-raised: #27262b;
   --color-line: #333238;
+  /* borda de controle (campos): 3:1 mínimo pra ser percebida — WCAG 1.4.11 */
+  --color-line-strong: #6e6c78;
+
+  /* texto — todos verificados >= 4.5:1 sobre bg/panel/raised (WCAG AA) */
   --color-ink: #e6e4e1;
   --color-dim: #97949a;
-  --color-faint: #605e64;
+  --color-faint: #918e96;
 
-  /* accent latão envelhecido — remete aos knobs do pedal físico, sem ser vibrante */
-  --color-accent: #a9825a;
-  --color-accent-strong: #8a6746;
+  /* accent latão envelhecido — remete aos knobs do pedal físico, sem vibrar */
+  --color-accent: #b28c62;
+  --color-accent-strong: #9a7449;
   --color-accent-ink: #17110a;
 
   /* status, sempre dessaturado */
   --color-ok: #7c9a7e;
+  --color-danger: #cf8080;
 }
 
 @layer base {
@@ -41,8 +46,24 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
+  /* números em colunas/valores não podem "dançar" ao mudar de dígito */
+  code,
+  kbd,
+  samp,
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
   ::selection {
     background: color-mix(in oklab, var(--color-accent) 30%, transparent);
+  }
+  /* foco visível consistente em tudo que é interativo (WCAG 2.4.7) */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  [disabled] {
+    cursor: not-allowed;
   }
 }
 
@@ -67,5 +88,18 @@
   .scroll-thin {
     scrollbar-width: thin;
     scrollbar-color: var(--color-line) transparent;
+  }
+}
+
+/* Respeita quem pediu menos movimento no sistema (WCAG 2.3.3).
+   O JS também consulta essa media query — ver Knob.tsx. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

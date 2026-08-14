@@ -48,9 +48,10 @@ export function Home({ status, onConnect, onDemo }: HomeProps) {
 
       <div className="mt-10 flex flex-col items-center gap-3">
         <button
+          type="button"
           onClick={onConnect}
           disabled={unsupported}
-          className="flex h-11 items-center gap-2 rounded-lg bg-accent px-5 text-sm font-semibold text-accent-ink transition-all duration-200 hover:bg-accent-strong active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-11 cursor-pointer items-center gap-2 rounded-lg bg-accent px-5 text-sm font-semibold text-accent-ink transition-colors duration-200 hover:bg-accent-strong disabled:opacity-45"
         >
           Conectar pedal via USB
           <ArrowRight size={15} weight="bold" />
@@ -72,8 +73,9 @@ export function Home({ status, onConnect, onDemo }: HomeProps) {
         )}
 
         <button
+          type="button"
           onClick={onDemo}
-          className="mt-1 flex items-center gap-1.5 text-xs text-dim underline-offset-4 hover:text-ink hover:underline"
+          className="mt-1 flex h-11 cursor-pointer items-center gap-1.5 text-xs text-dim underline-offset-4 hover:text-ink hover:underline"
         >
           <Sparkle size={12} />
           Explorar sem pedal (modo demo)

@@ -34,8 +34,12 @@ export function DeviceSelector({ active, profiles }: DeviceSelectorProps) {
   return (
     <div className="relative">
       <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`Pedal ativo: ${active.name}. Trocar de pedal`}
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 rounded-md border border-line px-2 py-0.5 font-mono text-[10px] text-dim transition-colors hover:border-accent/40 hover:text-ink"
+        className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-line px-2.5 font-mono text-[10px] text-dim transition-colors hover:border-accent/50 hover:text-ink"
       >
         {active.name}
         <CaretDown size={9} weight="bold" />
@@ -44,12 +48,19 @@ export function DeviceSelector({ active, profiles }: DeviceSelectorProps) {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute top-full left-0 z-50 mt-1.5 w-44 rounded-lg border border-line bg-panel py-1 shadow-soft-lg">
+          <div
+            role="listbox"
+            aria-label="Pedais"
+            className="absolute top-full left-0 z-50 mt-1.5 w-44 rounded-lg border border-line bg-panel py-1 shadow-soft-lg"
+          >
             {profiles.map((p) => (
               <button
                 key={p.id}
+                type="button"
+                role="option"
+                aria-selected={p.id === active.id}
                 onClick={() => setOpen(false)}
-                className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs text-ink hover:bg-raised"
+                className="flex h-10 w-full cursor-pointer items-center justify-between px-3 text-left text-xs text-ink hover:bg-raised"
               >
                 {p.name}
                 {p.id === active.id && (
@@ -60,8 +71,11 @@ export function DeviceSelector({ active, profiles }: DeviceSelectorProps) {
             {COMING_SOON.map((p) => (
               <div
                 key={p.id}
+                role="option"
+                aria-selected={false}
+                aria-disabled="true"
                 title="Perfil ainda não implementado"
-                className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-faint"
+                className="flex h-10 w-full items-center justify-between px-3 text-xs text-faint"
               >
                 {p.name}
                 <span className="text-[9px] tracking-wide uppercase">

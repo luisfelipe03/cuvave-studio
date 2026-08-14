@@ -14,25 +14,41 @@ export function IrPanel({ profile }: IrPanelProps) {
   const { slots, distanceRange, sampleRate } = profile.irFormat
 
   return (
-    <div className="flex flex-col gap-5 rounded-2xl border border-line bg-panel p-6">
+    <section
+      aria-labelledby="ir-heading"
+      className="flex flex-col gap-5 rounded-2xl border border-line bg-panel p-6"
+    >
       <div className="flex items-center gap-2">
         <FileAudio size={18} weight="bold" className="text-accent" />
-        <h2 className="text-sm font-semibold tracking-wide uppercase">
+        <h2
+          id="ir-heading"
+          className="text-sm font-semibold tracking-wide uppercase"
+        >
           Enviar IR ao pedal
         </h2>
       </div>
 
       <div className="flex flex-col gap-2">
-        <span className="text-xs font-medium text-dim">Posição (slot)</span>
-        <div className="flex gap-1 rounded-lg border border-line bg-bg p-1">
+        <span id="ir-slot-label" className="text-xs font-medium text-dim">
+          Posição (slot)
+        </span>
+        <div
+          role="radiogroup"
+          aria-labelledby="ir-slot-label"
+          className="grid grid-cols-4 gap-1.5"
+        >
           {Array.from({ length: slots }, (_, i) => i + 1).map((n) => (
             <button
               key={n}
+              type="button"
+              role="radio"
+              aria-checked={n === slot}
+              aria-label={`Slot ${n}`}
               onClick={() => setSlot(n)}
-              className={`h-9 flex-1 rounded-md font-mono text-sm font-medium transition-all duration-200 active:scale-[0.96] ${
+              className={`tabular h-11 cursor-pointer rounded-md border font-mono text-sm font-medium transition-colors duration-200 ${
                 n === slot
-                  ? 'bg-accent text-accent-ink shadow-soft'
-                  : 'text-dim hover:bg-raised hover:text-ink'
+                  ? 'border-transparent bg-accent text-accent-ink'
+                  : 'border-line text-dim hover:bg-raised hover:text-ink'
               }`}
             >
               {n}
@@ -40,66 +56,73 @@ export function IrPanel({ profile }: IrPanelProps) {
           ))}
         </div>
         <span className="text-xs text-faint">
-          importar sobrescreve o slot escolhido
+          Importar sobrescreve o slot escolhido.
         </span>
       </div>
 
       <div className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between">
-          <span className="text-xs font-medium text-dim">
+          <label htmlFor="ir-distance" className="text-xs font-medium text-dim">
             Distância do microfone
-          </span>
-          <span className="font-mono text-xs text-ink">{distance}%</span>
+          </label>
+          <span className="tabular font-mono text-xs text-ink">{distance}%</span>
         </div>
         <input
+          id="ir-distance"
           type="range"
           min={distanceRange[0]}
           max={distanceRange[1]}
           value={distance}
+          aria-describedby="ir-distance-help"
           onChange={(e) => setDistance(Number(e.target.value))}
-          className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-raised accent-[var(--color-accent)]"
+          className="h-11 w-full cursor-pointer accent-[var(--color-accent)]"
         />
         <span
+          id="ir-distance-help"
           className={`text-xs ${distance >= 99 ? 'text-accent' : 'text-faint'}`}
         >
           {distance >= 99
-            ? '100% = silêncio: afaste o microfone antes de testar'
-            : 'mais perto = mais alto'}
+            ? '100% é silêncio — aproxime o microfone antes de testar.'
+            : 'Mais perto, mais alto.'}
         </span>
       </div>
 
       <div className="flex flex-col gap-2">
         <span className="text-xs font-medium text-dim">
-          Arquivo WAV ({sampleRate / 1000}kHz / 24bit)
+          Arquivo WAV ({sampleRate / 1000}kHz / 24 bit)
         </span>
         <input
           ref={inputRef}
           type="file"
           accept=".wav,audio/wav"
-          className="hidden"
+          className="sr-only"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         />
         <button
+          type="button"
           onClick={() => inputRef.current?.click()}
-          className="flex h-11 items-center justify-center gap-2 rounded-lg border border-dashed border-line text-sm text-dim transition-colors hover:border-accent/40 hover:text-ink"
+          className="flex h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong px-3 text-sm text-dim transition-colors hover:border-accent/50 hover:text-ink"
         >
-          <UploadSimple size={16} />
-          {file ? file.name : 'Escolher arquivo WAV'}
+          <UploadSimple size={16} className="shrink-0" />
+          <span className="truncate">
+            {file ? file.name : 'Escolher arquivo WAV'}
+          </span>
         </button>
         {file && (
-          <span className="font-mono text-xs text-faint">
+          <span className="tabular font-mono text-xs text-faint">
             {(file.size / 1024).toFixed(1)} KB
           </span>
         )}
       </div>
 
       <button
+        type="button"
         disabled
-        title="O envio real ao pedal entra no M3, depois do protocolo validado"
+        title="O envio real ao pedal entra no M3, depois do protocolo validado com o hardware"
         className="h-11 rounded-lg border border-line bg-raised text-sm font-medium text-faint"
       >
         Enviar ao pedal (em breve)
       </button>
-    </div>
+    </section>
   )
 }

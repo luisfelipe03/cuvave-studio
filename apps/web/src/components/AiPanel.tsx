@@ -1,39 +1,14 @@
-import { useState } from 'react'
-import { Sparkle, WarningCircle } from '@phosphor-icons/react'
+import { useRef, useState } from 'react'
+import {
+  ArrowClockwise,
+  Check,
+  Key,
+  Sparkle,
+  WarningCircle,
+} from '@phosphor-icons/react'
 import type { DeviceProfile, PresetValues } from 'profiles'
-import { clampValues, defaultPresetValues } from 'profiles'
-
-function buildSystemPrompt(profile: DeviceProfile): string {
-  const params = profile.parameters
-    .map((p) => {
-      if (p.options) {
-        return `${p.id} (${p.label}): inteiro entre ${p.min} e ${p.max}. Opções: ${p.options.map((o) => `${o.value}="${o.label}"`).join(', ')}.`
-      }
-      const zones = p.zones
-        ? ` Zonas: ${p.zones.map((z) => `${z.label}=${z.min}-${z.max}`).join(', ')}.`
-        : ''
-      return `${p.id} (${p.label}): inteiro entre ${p.min} e ${p.max}.${zones}`
-    })
-    .join('\n')
-
-  return [
-    `Você gera presets de guitarra para a pedaleira ${profile.name} (Cuvave/M-VAVE).`,
-    `A cadeia de efeitos é fixa: Tuner → Preamp → Phaser/Chorus → Delay → Reverb → IR CAB.`,
-    `Há ${profile.presetCount} presets: ${profile.presetLabels.join(', ')}.`,
-    `Parâmetros de cada preset (use APENAS valores dentro dos limites):`,
-    params,
-    `Semântica: mix=0 desliga o delay; reverb=0 desliga o reverb; mod entre 7 e 8 desliga o mod (0-6 chorus, 9-15 phaser); ir_cab=0 desliga o IR.`,
-    `Responda SOMENTE com JSON válido no formato:`,
-    `{"presets":{"a":{...todos os parâmetros...},"b":{...},"c":{...}},"explanation":"..."}`,
-    `Os três presets devem formar um conjunto coerente (ex: a=ritmo com drive médio, b=lead com mais gain/delay, c=clean/ambiente).`,
-    `A explicação deve citar cada escolha em português, de forma concreta.`,
-  ].join('\n')
-}
-
-interface AiResponse {
-  presets: { a: PresetValues; b: PresetValues; c: PresetValues }
-  explanation: string
-}
+import { DeepSeekError, generatePresets } from '../lib/deepseek'
+import type { GeneratedPresets } from '../lib/deepseek'
 
 interface AiPanelProps {
   profile: DeviceProfile
@@ -45,8 +20,29 @@ interface AiPanelProps {
 type AiState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'done'; result: AiResponse }
-  | { kind: 'error'; message: string }
+  | { kind: 'done'; result: GeneratedPresets; applied: boolean }
+  | { kind: 'error'; message: string; keyProblem: boolean }
+
+/** Resumo legível de um preset: nome das opções + valores contínuos. */
+function summarize(profile: DeviceProfile, values: PresetValues) {
+  const named = profile.parameters
+    .filter((p) => p.options)
+    .map((p) => p.options?.find((o) => o.value === values[p.id])?.label)
+    .filter((l): l is string => Boolean(l))
+
+  const chips = profile.parameters
+    .filter((p) => !p.options)
+    .map((p) => {
+      const v = values[p.id]
+      const zone = p.zones?.find((z) => v >= z.min && v <= z.max)
+      const label = p.label.toLowerCase()
+      return zone && zone.label.toLowerCase() === 'off'
+        ? `${label} off`
+        : `${label} ${v}`
+    })
+
+  return { named, chips }
+}
 
 export function AiPanel({
   profile,
@@ -57,79 +53,83 @@ export function AiPanel({
   const [song, setSong] = useState('')
   const [hint, setHint] = useState('')
   const [state, setState] = useState<AiState>({ kind: 'idle' })
+  const abortRef = useRef<AbortController | null>(null)
+
+  const loading = state.kind === 'loading'
 
   const generate = async () => {
-    if (!apiKey) {
-      setState({
-        kind: 'error',
-        message: 'Configure sua API key da DeepSeek para usar a IA.',
-      })
-      return
-    }
+    if (!song.trim() || loading) return
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
     setState({ kind: 'loading' })
     try {
-      const res = await fetch('https://api.deepseek.com/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'deepseek-chat',
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: buildSystemPrompt(profile) },
-            {
-              role: 'user',
-              content: `Gere 3 presets para a música "${song}".${hint ? ` Contexto extra: ${hint}` : ''}`,
-            },
-          ],
-        }),
+      const result = await generatePresets({
+        apiKey,
+        profile,
+        song: song.trim(),
+        hint: hint.trim() || undefined,
+        signal: controller.signal,
       })
-      if (!res.ok) {
-        const text = await res.text()
-        throw new Error(`API respondeu ${res.status}: ${text.slice(0, 120)}`)
-      }
-      const data = (await res.json()) as { choices: { message: { content: string } }[] }
-      const parsed = JSON.parse(data.choices[0].message.content) as AiResponse
-      const fallback = defaultPresetValues(profile)
-      const result: AiResponse = {
-        presets: {
-          a: clampValues(profile, { ...fallback, ...parsed.presets?.a }),
-          b: clampValues(profile, { ...fallback, ...parsed.presets?.b }),
-          c: clampValues(profile, { ...fallback, ...parsed.presets?.c }),
-        },
-        explanation: parsed.explanation ?? '',
-      }
-      setState({ kind: 'done', result })
+      setState({ kind: 'done', result, applied: false })
     } catch (err) {
+      const known = err instanceof DeepSeekError
       setState({
         kind: 'error',
-        message: err instanceof Error ? err.message : 'Falha ao gerar presets.',
+        message: known
+          ? err.message
+          : 'Não deu pra gerar os presets. Tente de novo.',
+        keyProblem: known && err.isKeyProblem,
       })
     }
   }
 
   return (
-    <div className="flex flex-col gap-5 rounded-2xl border border-line bg-panel p-6">
+    <section
+      aria-labelledby="ai-heading"
+      className="flex flex-col gap-5 rounded-2xl border border-line bg-panel p-6"
+    >
       <div className="flex items-center gap-2">
         <Sparkle size={18} weight="bold" className="text-accent" />
-        <h2 className="text-sm font-semibold tracking-wide uppercase">
+        <h2
+          id="ai-heading"
+          className="text-sm font-semibold tracking-wide uppercase"
+        >
           Gerar preset com IA
         </h2>
       </div>
 
+      {!apiKey && (
+        <div className="flex flex-col items-start gap-2 rounded-lg border border-line bg-bg/60 p-3">
+          <p className="text-xs leading-relaxed text-dim">
+            A geração usa a sua chave da DeepSeek — ela fica só neste
+            navegador.
+          </p>
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md text-xs font-medium text-accent transition-colors hover:underline"
+          >
+            <Key size={13} weight="bold" />
+            Configurar chave
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-col gap-4">
         <label className="flex flex-col gap-2">
           <span className="text-xs font-medium text-dim">
-            Nome da música <span className="text-faint">*</span>
+            Nome da música <span aria-hidden="true">*</span>
+            <span className="sr-only">(obrigatório)</span>
           </span>
           <input
             type="text"
+            required
             value={song}
             onChange={(e) => setSong(e.target.value)}
-            placeholder="Ex: Sweet Child O' Mine, Sober, Wherever I May Roam…"
-            className="h-11 rounded-lg border border-line bg-bg px-3.5 text-sm text-ink placeholder:text-faint focus:border-accent/50 focus:outline-none"
+            onKeyDown={(e) => e.key === 'Enter' && generate()}
+            placeholder="Sweet Child O' Mine"
+            className="h-11 rounded-lg border border-line-strong bg-bg px-3.5 text-sm text-ink transition-colors placeholder:text-faint focus:border-accent"
           />
         </label>
         <label className="flex flex-col gap-2">
@@ -140,72 +140,134 @@ export function AiPanel({
             type="text"
             value={hint}
             onChange={(e) => setHint(e.target.value)}
-            placeholder="Ex: tom mais pesado, clean com chorus, vintage…"
-            className="h-11 rounded-lg border border-line bg-bg px-3.5 text-sm text-ink placeholder:text-faint focus:border-accent/50 focus:outline-none"
+            onKeyDown={(e) => e.key === 'Enter' && generate()}
+            placeholder="mais pesado, menos delay…"
+            className="h-11 rounded-lg border border-line-strong bg-bg px-3.5 text-sm text-ink transition-colors placeholder:text-faint focus:border-accent"
           />
         </label>
       </div>
 
-      {state.kind === 'error' && (
-        <div className="flex items-start gap-2 rounded-lg border border-accent/30 bg-accent/5 p-3 text-sm text-ink">
-          <WarningCircle size={16} className="mt-0.5 shrink-0 text-accent" />
-          <span>
-            {state.message}{' '}
-            {!apiKey && (
-              <button
-                onClick={onOpenSettings}
-                className="font-medium text-accent underline-offset-2 hover:underline"
-              >
-                Abrir configurações
-              </button>
-            )}
-          </span>
-        </div>
-      )}
+      <button
+        type="button"
+        onClick={generate}
+        disabled={!song.trim() || loading}
+        className="flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-accent px-5 text-sm font-semibold text-accent-ink transition-colors duration-200 hover:bg-accent-strong disabled:opacity-45"
+      >
+        {loading ? (
+          <>
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent-ink/30 border-t-accent-ink" />
+            Gerando…
+          </>
+        ) : (
+          <>
+            <Sparkle size={16} weight="fill" />
+            Gerar {profile.presetCount} presets
+          </>
+        )}
+      </button>
 
-      <div className="flex items-center gap-3">
-        <button
-          onClick={generate}
-          disabled={!song.trim() || state.kind === 'loading'}
-          className="flex h-11 items-center gap-2 rounded-lg bg-accent px-5 text-sm font-semibold text-accent-ink transition-all duration-200 hover:bg-accent-strong active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {state.kind === 'loading' ? (
-            <>
-              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent-ink/30 border-t-accent-ink" />
-              Gerando…
-            </>
-          ) : (
-            <>
-              <Sparkle size={16} weight="fill" />
-              Gerar presets
-            </>
-          )}
-        </button>
-        <span className="text-xs text-faint">
-          {profile.presetCount} presets ({profile.presetLabels.join('/')}) +
-          explicação
-        </span>
-      </div>
-
-      {state.kind === 'done' && (
-        <div className="flex flex-col gap-4 border-t border-line pt-5">
-          <p className="text-sm leading-relaxed text-dim">
-            {state.result.explanation}
-          </p>
-          <button
-            onClick={() =>
-              onApply([
-                state.result.presets.a,
-                state.result.presets.b,
-                state.result.presets.c,
-              ])
-            }
-            className="h-10 self-start rounded-lg border border-accent/40 bg-accent/10 px-4 text-sm font-medium text-accent transition-all duration-200 hover:bg-accent/20 active:scale-[0.97]"
+      {/* Erros e resultado são anunciados a leitores de tela */}
+      <div aria-live="polite" className="contents">
+        {state.kind === 'error' && (
+          <div
+            role="alert"
+            className="flex flex-col items-start gap-2 rounded-lg border border-danger/40 bg-danger/8 p-3"
           >
-            Aplicar aos presets A/B/C
-          </button>
-        </div>
-      )}
-    </div>
+            <p className="flex items-start gap-2 text-sm leading-relaxed text-ink">
+              <WarningCircle
+                size={16}
+                weight="fill"
+                className="mt-0.5 shrink-0 text-danger"
+              />
+              {state.message}
+            </p>
+            <div className="flex items-center gap-1 pl-6">
+              {state.keyProblem ? (
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md text-xs font-medium text-accent transition-colors hover:underline"
+                >
+                  <Key size={13} weight="bold" />
+                  Abrir configurações
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={generate}
+                  className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md text-xs font-medium text-accent transition-colors hover:underline"
+                >
+                  <ArrowClockwise size={13} weight="bold" />
+                  Tentar de novo
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {state.kind === 'done' && (
+          <div className="flex flex-col gap-4 border-t border-line pt-5">
+            {state.result.explanation && (
+              <p className="text-sm leading-relaxed text-dim">
+                {state.result.explanation}
+              </p>
+            )}
+
+            <ul className="flex flex-col gap-2">
+              {state.result.presets.map((preset, i) => {
+                const { named, chips } = summarize(profile, preset)
+                return (
+                  <li
+                    key={profile.presetLabels[i]}
+                    className="rounded-lg border border-line bg-bg/60 p-3"
+                  >
+                    <div className="flex items-baseline gap-2">
+                      <span className="tabular font-mono text-xs font-semibold text-accent">
+                        {profile.presetLabels[i]}
+                      </span>
+                      <span className="truncate text-xs font-medium text-ink">
+                        {state.result.names[i]}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 text-[11px] leading-relaxed text-dim">
+                      {named.join(' · ')}
+                    </p>
+                    <p className="tabular mt-1 font-mono text-[10px] leading-relaxed text-faint">
+                      {chips.join(' · ')}
+                    </p>
+                  </li>
+                )
+              })}
+            </ul>
+
+            <button
+              type="button"
+              onClick={() => {
+                onApply(state.result.presets)
+                setState({ ...state, applied: true })
+              }}
+              disabled={state.applied}
+              className="flex h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-accent/50 bg-accent/12 px-4 text-sm font-medium text-accent transition-colors duration-200 hover:bg-accent/20 disabled:opacity-45"
+            >
+              {state.applied ? (
+                <>
+                  <Check size={15} weight="bold" />
+                  Aplicado aos presets
+                </>
+              ) : (
+                `Aplicar aos presets ${profile.presetLabels.join('/')}`
+              )}
+            </button>
+
+            {state.result.usage && (
+              <p className="tabular text-center font-mono text-[10px] text-faint">
+                {state.result.usage.total.toLocaleString('pt-BR')} tokens
+                consumidos
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   )
 }
