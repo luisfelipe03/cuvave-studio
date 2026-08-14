@@ -1,10 +1,16 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, WheelEvent } from 'react'
 import type { Parameter } from 'profiles'
 
+/**
+ * Convenção física de knob: mínimo em ~7:30 (baixo-esquerda), sweep no
+ * sentido horário PASSANDO PELO TOPO até ~4:30 (baixo-direita) — o vão sem
+ * indicação fica embaixo. Em ângulo SVG (0° = 3h, sentido horário positivo,
+ * y pra baixo) isso é START=135°, SWEEP=270° até 45°.
+ */
+const START_ANGLE = 135
 const SWEEP = 270
-const START_ANGLE = -135
-const RADIUS = 26
+const RADIUS = 27
 const C = 2 * Math.PI * RADIUS
 
 function zoneFor(param: Parameter, value: number) {
@@ -19,6 +25,8 @@ interface KnobProps {
 
 export function Knob({ param, value, onChange }: KnobProps) {
   const drag = useRef<{ startY: number; startValue: number } | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const [focused, setFocused] = useState(false)
   const t = (value - param.min) / (param.max - param.min)
   const angle = START_ANGLE + SWEEP * t
   const zone = zoneFor(param, value)
@@ -31,8 +39,11 @@ export function Knob({ param, value, onChange }: KnobProps) {
     onChange(Math.min(param.max, Math.max(param.min, d.startValue + delta)))
   }
 
+  // Só entra em modo de arrasto com um pointerdown explícito — mover ou
+  // passar o mouse por cima nunca altera o valor sozinho.
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     drag.current = { startY: e.clientY, startValue: value }
+    setDragging(true)
     e.currentTarget.setPointerCapture(e.pointerId)
   }
 
@@ -40,11 +51,15 @@ export function Knob({ param, value, onChange }: KnobProps) {
     if (drag.current) setFromPointer(e.clientY)
   }
 
-  const onPointerUp = () => {
+  const endDrag = () => {
     drag.current = null
+    setDragging(false)
   }
 
+  // Scroll do mouse só ajusta depois de um clique prévio (foco) — nunca
+  // no simples hover.
   const onWheel = (e: WheelEvent<HTMLDivElement>) => {
+    if (!focused) return
     e.preventDefault()
     const step = e.shiftKey ? 1 : 4
     const delta = e.deltaY < 0 ? step : -step
@@ -52,7 +67,7 @@ export function Knob({ param, value, onChange }: KnobProps) {
   }
 
   return (
-    <div className="flex w-[72px] select-none flex-col items-center gap-1.5">
+    <div className="flex w-[72px] select-none flex-col items-center gap-2">
       <div
         role="slider"
         aria-label={param.label}
@@ -60,11 +75,14 @@ export function Knob({ param, value, onChange }: KnobProps) {
         aria-valuemax={param.max}
         aria-valuenow={value}
         tabIndex={0}
-        className="cursor-ns-resize touch-none rounded-full outline-none transition-transform duration-150 active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-accent/50"
+        className="cursor-ns-resize touch-none rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
         onWheel={onWheel}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         onKeyDown={(e) => {
           if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
             e.preventDefault()
@@ -75,39 +93,61 @@ export function Knob({ param, value, onChange }: KnobProps) {
           }
         }}
         onDoubleClick={() => onChange(param.default)}
-        title="Arraste verticalmente · Shift = fino · duplo clique = padrão"
+        title="Clique e arraste verticalmente · duplo clique = padrão"
       >
-        <svg width="64" height="64" viewBox="0 0 64 64">
+        <svg
+          width="64"
+          height="64"
+          viewBox="0 0 64 64"
+          className={dragging ? 'scale-[1.04] transition-transform' : 'transition-transform'}
+        >
+          {/* corpo recesso do knob */}
+          <circle cx="32" cy="32" r="19" fill="var(--color-raised)" />
+          <circle
+            cx="32"
+            cy="32"
+            r="19"
+            fill="none"
+            stroke="black"
+            strokeOpacity="0.25"
+            strokeWidth="1"
+          />
+          {/* trilho */}
           <circle
             cx="32"
             cy="32"
             r={RADIUS}
             fill="none"
-            stroke="var(--color-raised)"
-            strokeWidth="3"
+            stroke="var(--color-line)"
+            strokeWidth="2.5"
+            strokeDasharray={`${(C * SWEEP) / 360} ${C}`}
+            transform={`rotate(${START_ANGLE} 32 32)`}
+            strokeLinecap="round"
           />
+          {/* progresso */}
           <circle
             cx="32"
             cy="32"
             r={RADIUS}
             fill="none"
             stroke="var(--color-accent)"
-            strokeWidth="3"
+            strokeWidth="2.5"
             strokeLinecap="round"
-            strokeDasharray={`${C * Math.max(t, 0.001)} ${C}`}
+            strokeDasharray={`${(C * SWEEP * Math.max(t, 0.001)) / 360} ${C}`}
             transform={`rotate(${START_ANGLE} 32 32)`}
           />
+          {/* ponteiro */}
           <line
             x1="32"
             y1="32"
             x2="32"
-            y2="12"
+            y2="16"
             stroke="var(--color-ink)"
-            strokeWidth="3"
+            strokeWidth="2.5"
             strokeLinecap="round"
             transform={`rotate(${angle} 32 32)`}
           />
-          <circle cx="32" cy="32" r="3" fill="var(--color-ink)" />
+          <circle cx="32" cy="32" r="2.5" fill="var(--color-ink)" />
         </svg>
       </div>
       <div className="flex flex-col items-center gap-0.5">

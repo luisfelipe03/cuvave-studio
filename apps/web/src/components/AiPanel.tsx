@@ -111,7 +111,7 @@ export function AiPanel({
   }
 
   return (
-    <div className="flex flex-col gap-6 rounded-2xl border border-line bg-panel p-8">
+    <div className="flex flex-col gap-5 rounded-2xl border border-line bg-panel p-6">
       <div className="flex items-center gap-2">
         <Sparkle size={18} weight="bold" className="text-accent" />
         <h2 className="text-sm font-semibold tracking-wide uppercase">

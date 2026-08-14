@@ -1,50 +1,56 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { DeviceProfile } from 'profiles'
 
 export type DeviceStatus =
   | { kind: 'unsupported' }
-  | { kind: 'scanning' }
+  | { kind: 'idle' }
+  | { kind: 'requesting' }
+  | { kind: 'denied' }
   | { kind: 'disconnected' }
   | { kind: 'connected'; name: string }
 
 /**
  * Detecção do pedal via Web MIDI API.
  *
+ * A permissão só é pedida quando `connect()` é chamado (ação explícita do
+ * usuário, ex: botão "Conectar pedal") — nunca automaticamente ao carregar
+ * a página.
+ *
  * M1/M2: só identifica o dispositivo na lista de portas — ainda não fala o
  * protocolo (SysEx entra depois do dump de memória com o pedal físico).
- * Até lá o app opera em "modo demo" mesmo com o pedal conectado.
  */
 export function useDevice(profile: DeviceProfile) {
-  const [status, setStatus] = useState<DeviceStatus>({ kind: 'scanning' })
+  const [status, setStatus] = useState<DeviceStatus>(() =>
+    typeof navigator.requestMIDIAccess === 'function'
+      ? { kind: 'idle' }
+      : { kind: 'unsupported' },
+  )
 
-  useEffect(() => {
-    let cancelled = false
+  const scan = useCallback(
+    (access: MIDIAccess) => {
+      const names = Array.from(access.outputs.values(), (p) => p.name ?? '')
+      const match = names.find((n) => profile.detect.test(n))
+      setStatus(
+        match ? { kind: 'connected', name: match } : { kind: 'disconnected' },
+      )
+    },
+    [profile],
+  )
 
+  const connect = useCallback(() => {
     if (typeof navigator.requestMIDIAccess !== 'function') {
       setStatus({ kind: 'unsupported' })
       return
     }
-
+    setStatus({ kind: 'requesting' })
     navigator.requestMIDIAccess({ sysex: true }).then(
       (access) => {
-        if (cancelled) return
-        const names = Array.from(access.outputs.values(), (p) => p.name ?? '')
-        const match = names.find((n) => profile.detect.test(n))
-        if (match) {
-          setStatus({ kind: 'connected', name: match })
-        } else {
-          setStatus({ kind: 'disconnected' })
-        }
+        scan(access)
+        access.onstatechange = () => scan(access)
       },
-      () => {
-        if (!cancelled) setStatus({ kind: 'unsupported' })
-      },
+      () => setStatus({ kind: 'denied' }),
     )
+  }, [scan])
 
-    return () => {
-      cancelled = true
-    }
-  }, [profile])
-
-  return status
+  return { status, connect }
 }
