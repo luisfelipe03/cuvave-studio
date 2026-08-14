@@ -145,7 +145,7 @@ export function Knob({ param, value, onChange }: KnobProps) {
             stroke="var(--color-ink)"
             strokeWidth="2.5"
             strokeLinecap="round"
-            transform={`rotate(${angle} 32 32)`}
+            transform={`rotate(${angle + 90} 32 32)`}
           />
           <circle cx="32" cy="32" r="2.5" fill="var(--color-ink)" />
         </svg>
