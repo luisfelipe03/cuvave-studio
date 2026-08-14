@@ -125,14 +125,49 @@ export function buildSystemPrompt(
       : `Sugira a posição de captador (braço, meio ou ponte) que melhor serve a música.`,
     ``,
     `Responda SOMENTE com JSON válido, sem markdown, neste formato:`,
-    `{"name":"...","pickup":"...","preset":{...},"explanation":"..."}`,
+    `{"name":"...","pickup":"...","tuning":{"name":"...","notes":["E","A","D","G","B","E"]},"preset":{...},"explanation":"..."}`,
     ``,
     `- "name": rótulo curto (1-3 palavras) do timbre, ex: "Clean chorus", "Blues lead".`,
     `- "pickup": posição do captador em 1-2 palavras, ex: "braço", "ponte".`,
+    `- "tuning": a afinação em que a música original é tocada. "name" é o nome`,
+    `  comum (ex: "E standard", "Drop D", "Eb standard", "Open G") e "notes" são`,
+    `  as 6 notas das cordas, da 6ª (mais grave) até a 1ª (mais aguda), sem`,
+    `  oitavas — ex: afinação padrão é ["E","A","D","G","B","E"], Drop D é`,
+    `  ["D","A","D","G","B","E"]. Use # pra sustenido (ex: "F#") e b pra bemol.`,
     `- "preset": TODOS os parâmetros listados acima.`,
     `- "explanation": 2-3 frases em português do Brasil, citando os valores concretos`,
     `  e por que servem para ESTA música. Direto ao ponto, sem encher linguiça.`,
   ].join('\n')
+}
+
+export interface Tuning {
+  /** nome comum, ex: "E standard", "Drop D" */
+  name: string
+  /** 6 notas, da 6ª corda (grave) até a 1ª (aguda), ex: ["E","A","D","G","B","E"] */
+  notes: string[]
+}
+
+export const STANDARD_TUNING: Tuning = {
+  name: 'E standard',
+  notes: ['E', 'A', 'D', 'G', 'B', 'E'],
+}
+
+/** Sanitiza a afinação vinda da IA — nunca deixa nota inválida passar. */
+function sanitizeTuning(raw: unknown): Tuning {
+  if (!raw || typeof raw !== 'object') return STANDARD_TUNING
+  const obj = raw as { name?: unknown; notes?: unknown }
+  const name =
+    typeof obj.name === 'string' && obj.name.trim()
+      ? obj.name.trim().slice(0, 24)
+      : STANDARD_TUNING.name
+  const notes = Array.isArray(obj.notes)
+    ? obj.notes
+        .map((n) => (typeof n === 'string' ? n.trim().toUpperCase() : ''))
+        .filter((n) => /^[A-G](?:#|B)?$/.test(n))
+        .slice(0, 6)
+    : []
+  if (notes.length !== 6) return STANDARD_TUNING
+  return { name, notes }
 }
 
 export interface GeneratedPreset {
@@ -142,6 +177,8 @@ export interface GeneratedPreset {
   name: string
   /** posição de captador sugerida, ex: "braço" */
   pickup: string
+  /** afinação em que a música é tocada */
+  tuning: Tuning
   values: PresetValues
   explanation: string
   usage?: { prompt: number; completion: number; total: number }
@@ -237,6 +274,7 @@ export async function generatePreset(opts: {
     preset?: PresetValues
     name?: string
     pickup?: string
+    tuning?: unknown
     explanation?: string
   }
   try {
@@ -270,6 +308,7 @@ export async function generatePreset(opts: {
     song,
     name: text(parsed.name, 28, 'Preset gerado'),
     pickup: text(parsed.pickup, 16, ''),
+    tuning: sanitizeTuning(parsed.tuning),
     values,
     explanation: text(parsed.explanation, 600, ''),
     usage: data?.usage

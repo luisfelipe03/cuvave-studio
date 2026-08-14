@@ -258,18 +258,16 @@ export function PlaylistSection({
         </ul>
       )}
 
-      {playlists.playlists.length > 0 && (
-        <button
-          type="button"
-          onClick={() => {
-            const id = playlists.create()
-            setExpandedId(id)
-          }}
-          className="self-start text-xs font-medium text-dim transition-colors hover:text-ink hover:underline"
-        >
-          + Nova playlist
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => {
+          const id = playlists.create()
+          setExpandedId(id)
+        }}
+        className="self-start text-xs font-medium text-dim transition-colors hover:text-ink hover:underline"
+      >
+        + Nova playlist
+      </button>
     </div>
   )
 }

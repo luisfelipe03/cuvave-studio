@@ -16,8 +16,10 @@ import { searchSongs } from '../lib/songSearch'
 import type { SongSuggestion } from '../lib/songSearch'
 import { saveLibrary } from '../lib/storage'
 import type { LibraryEntry } from '../lib/storage'
+import { STANDARD_TUNING } from '../lib/deepseek'
 import type { PlaylistsState } from '../state/usePlaylists'
 import { PlaylistSection } from './PlaylistSection'
+import { TuningIcon } from './TuningIcon'
 
 interface AiPanelProps {
   profile: DeviceProfile
@@ -149,6 +151,7 @@ export function AiPanel({
         song: result.song,
         name: result.name,
         pickup: result.pickup,
+        tuning: result.tuning,
         explanation: result.explanation,
         values: result.values,
         createdAt: new Date().toISOString(),
@@ -421,6 +424,9 @@ export function AiPanel({
                       <span className="block truncate text-[11px] text-dim">
                         {entry.name}
                         {entry.pickup && ` · captador ${entry.pickup}`}
+                        {entry.tuning &&
+                          entry.tuning.name !== STANDARD_TUNING.name &&
+                          ` · ${entry.tuning.name}`}
                       </span>
                     </span>
                     <CaretDown
@@ -434,12 +440,20 @@ export function AiPanel({
 
                   {expanded && (
                     <div className="flex flex-col gap-3 px-3 pb-3">
-                      {entry.pickup && (
-                        <p className="flex items-center gap-1.5 text-xs text-accent">
-                          <Guitar size={14} weight="bold" />
-                          Captador: {entry.pickup}
-                        </p>
-                      )}
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                        {entry.pickup && (
+                          <p className="flex items-center gap-1.5 text-xs text-accent">
+                            <Guitar size={14} weight="bold" />
+                            Captador: {entry.pickup}
+                          </p>
+                        )}
+                        {entry.tuning && (
+                          <div className="flex items-center gap-1.5 text-xs text-dim">
+                            <TuningIcon tuning={entry.tuning} />
+                            <span>{entry.tuning.name}</span>
+                          </div>
+                        )}
+                      </div>
 
                       <div className="rounded-md border border-line bg-panel p-2.5">
                         <p className="text-[11px] leading-relaxed text-dim">

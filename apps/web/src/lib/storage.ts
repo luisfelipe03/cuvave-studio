@@ -1,5 +1,6 @@
 import { clampValues, defaultPresetValues } from 'profiles'
 import type { DeviceProfile, PresetValues } from 'profiles'
+import type { Tuning } from './deepseek'
 
 export interface SavedPresets {
   version: 1
@@ -79,6 +80,8 @@ export interface LibraryEntry {
   song: string
   name: string
   pickup: string
+  /** afinação da música (opcional: entradas antigas não têm) */
+  tuning?: Tuning
   explanation: string
   values: PresetValues
   createdAt: string
