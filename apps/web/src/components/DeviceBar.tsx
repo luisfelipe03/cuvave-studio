@@ -3,6 +3,7 @@ import {
   CloudSlash,
   CloudWarning,
   GearSix,
+  House,
   SignIn,
   SignOut,
   WarningCircle,
@@ -23,6 +24,7 @@ interface DeviceBarProps {
   syncStatus: SyncStatus
   onSignIn: () => void
   onSignOut: () => void
+  onHome: () => void
   onOpenSettings: () => void
 }
 
@@ -50,6 +52,7 @@ export function DeviceBar({
   syncStatus,
   onSignIn,
   onSignOut,
+  onHome,
   onOpenSettings,
 }: DeviceBarProps) {
   const text = (() => {
@@ -76,6 +79,15 @@ export function DeviceBar({
     <header className="sticky top-0 z-30 border-b border-line bg-bg/85 backdrop-blur-md">
       <div className="mx-auto flex h-14 w-full max-w-[1400px] items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onHome}
+            title="Voltar para o início — sai do modo demo"
+            aria-label="Voltar para o início"
+            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-dim transition-colors hover:bg-raised hover:text-ink"
+          >
+            <House size={15} weight="bold" />
+          </button>
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent/12">
             <Waveform size={15} weight="bold" className="text-accent" />
           </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { cubeBabyProfile, profiles } from 'profiles'
 import { usePresets } from './state/usePresets'
 import { useDevice } from './state/useDevice'
@@ -28,6 +28,20 @@ export default function App() {
   )
   const [settingsOpen, setSettingsOpen] = useState(false)
 
+  // 'home' é a tela inicial (gate de conexão); 'editor' é o app de fato.
+  // Voltar pra Home pelo botão na barra sai do modo demo e volta pro gate.
+  const [screen, setScreen] = useState<'home' | 'editor'>('home')
+  // Só entra sozinho no editor quando a conexão veio de um clique em
+  // "Conectar pedal" — se o usuário pediu pra voltar pra Home, fica lá.
+  const enterFromConnect = useRef(false)
+
+  useEffect(() => {
+    if (enterFromConnect.current && device.status.kind === 'connected') {
+      enterFromConnect.current = false
+      setScreen('editor')
+    }
+  }, [device.status.kind])
+
   // Login é opcional: sem ele o app roda inteiro no localStorage.
   const cloud = useCloudSync({
     profile,
@@ -39,10 +53,26 @@ export default function App() {
   })
 
   const unlocked = demo || device.status.kind === 'connected'
+  const showEditor = screen === 'editor' && unlocked
+
+  const goHome = () => {
+    enterFromConnect.current = false
+    setDemo(false)
+    setScreen('home')
+  }
+
+  const connectFromHome = () => {
+    if (device.status.kind === 'connected') {
+      setScreen('editor')
+      return
+    }
+    enterFromConnect.current = true
+    device.connect()
+  }
 
   return (
     <div className="min-h-[100dvh]">
-      {unlocked && (
+      {showEditor && (
         <DeviceBar
           profile={profile}
           profiles={profiles}
@@ -52,11 +82,12 @@ export default function App() {
           syncStatus={cloud.status}
           onSignIn={cloud.signIn}
           onSignOut={cloud.signOut}
+          onHome={goHome}
           onOpenSettings={() => setSettingsOpen(true)}
         />
       )}
 
-      {unlocked ? (
+      {showEditor ? (
         <>
           <EditorScreen
             profile={profile}
@@ -76,8 +107,11 @@ export default function App() {
       ) : (
         <Home
           status={device.status}
-          onConnect={device.connect}
-          onDemo={() => setDemo(true)}
+          onConnect={connectFromHome}
+          onDemo={() => {
+            setDemo(true)
+            setScreen('editor')
+          }}
         />
       )}
 

@@ -1,15 +1,19 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ArrowClockwise,
   CaretDown,
+  CheckCircle,
   Guitar,
   Key,
+  MagnifyingGlass,
   Sparkle,
   Trash,
   WarningCircle,
 } from '@phosphor-icons/react'
 import type { DeviceProfile, PresetValues } from 'profiles'
 import { DeepSeekError, generatePreset } from '../lib/deepseek'
+import { searchSongs } from '../lib/songSearch'
+import type { SongSuggestion } from '../lib/songSearch'
 import { saveLibrary } from '../lib/storage'
 import type { LibraryEntry } from '../lib/storage'
 
@@ -66,6 +70,49 @@ export function AiPanel({
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
+  // Autocompletar de música — corrige erro de digitação antes de gastar
+  // tokens ("like a stona" → "Like a Stone (Audioslave)").
+  const [suggestions, setSuggestions] = useState<SongSuggestion[]>([])
+  const [suggestOpen, setSuggestOpen] = useState(false)
+  const [suggestIndex, setSuggestIndex] = useState(0)
+  // Artista confirmado ao escolher uma sugestão; entra no prompt da IA.
+  const [pickedArtist, setPickedArtist] = useState<string | null>(null)
+
+  useEffect(() => {
+    const q = song.trim()
+    if (q.length < 3) {
+      setSuggestions([])
+      setSuggestOpen(false)
+      return
+    }
+    const controller = new AbortController()
+    const id = setTimeout(async () => {
+      try {
+        const results = await searchSongs(q, controller.signal)
+        if (controller.signal.aborted) return
+        setSuggestions(results)
+        setSuggestIndex(0)
+        setSuggestOpen(true)
+      } catch {
+        // API fora do ar: silencia o autocompletar, geração segue normal.
+        if (!controller.signal.aborted) {
+          setSuggestions([])
+          setSuggestOpen(false)
+        }
+      }
+    }, 250)
+    return () => {
+      clearTimeout(id)
+      controller.abort()
+    }
+  }, [song])
+
+  const pickSuggestion = (s: SongSuggestion) => {
+    setSong(s.title)
+    setPickedArtist(s.artist === '—' ? null : s.artist)
+    setSuggestOpen(false)
+  }
+
   const loading = state.kind === 'loading'
 
   const updateLibrary = (next: LibraryEntry[]) => {
@@ -83,7 +130,7 @@ export function AiPanel({
       const result = await generatePreset({
         apiKey,
         profile,
-        song: song.trim(),
+        song: pickedArtist ? `${song.trim()} (${pickedArtist})` : song.trim(),
         hint: hint.trim() || undefined,
         guitar: guitar.trim() || undefined,
         signal: controller.signal,
@@ -145,21 +192,110 @@ export function AiPanel({
       )}
 
       <div className="flex flex-col gap-3">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium text-dim">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="song-input" className="text-xs font-medium text-dim">
             Música <span aria-hidden="true">*</span>
             <span className="sr-only">(obrigatório)</span>
-          </span>
+          </label>
           <input
+            id="song-input"
             type="text"
             required
+            role="combobox"
+            aria-expanded={suggestOpen}
+            aria-autocomplete="list"
+            aria-controls="song-suggestions"
+            aria-activedescendant={
+              suggestOpen && suggestions[suggestIndex]
+                ? `song-suggest-${suggestIndex}`
+                : undefined
+            }
             value={song}
-            onChange={(e) => setSong(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && generate()}
+            onChange={(e) => {
+              setSong(e.target.value)
+              setPickedArtist(null)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown' && suggestions.length > 0) {
+                e.preventDefault()
+                setSuggestOpen(true)
+                setSuggestIndex((i) => (i + 1) % suggestions.length)
+              } else if (e.key === 'ArrowUp' && suggestOpen) {
+                e.preventDefault()
+                setSuggestIndex(
+                  (i) => (i - 1 + suggestions.length) % suggestions.length,
+                )
+              } else if (e.key === 'Enter') {
+                if (suggestOpen && suggestions[suggestIndex]) {
+                  e.preventDefault()
+                  pickSuggestion(suggestions[suggestIndex])
+                } else {
+                  generate()
+                }
+              } else if (e.key === 'Escape') {
+                setSuggestOpen(false)
+              }
+            }}
+            onBlur={() => setSuggestOpen(false)}
             placeholder="Do I Wanna Know?"
             className="h-11 rounded-lg border border-line-strong bg-bg px-3.5 text-sm text-ink transition-colors placeholder:text-faint focus:border-accent"
           />
-        </label>
+
+          {pickedArtist && (
+            <span className="flex items-center gap-1.5 text-xs text-ok">
+              <CheckCircle size={13} weight="fill" />
+              {song} — {pickedArtist}
+            </span>
+          )}
+
+          {suggestOpen && song.trim().length >= 3 && (
+            suggestions.length > 0 ? (
+              <ul
+                id="song-suggestions"
+                role="listbox"
+                aria-label="Sugestões de música"
+                className="flex flex-col gap-0.5 rounded-lg border border-line bg-bg p-1"
+              >
+                {suggestions.map((s, i) => {
+                  const active = i === suggestIndex
+                  return (
+                    <li
+                      key={s.id}
+                      id={`song-suggest-${i}`}
+                      role="option"
+                      aria-selected={active}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        pickSuggestion(s)
+                      }}
+                      onMouseEnter={() => setSuggestIndex(i)}
+                      className={`flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left ${
+                        active ? 'bg-raised' : ''
+                      }`}
+                    >
+                      <MagnifyingGlass
+                        size={12}
+                        className="shrink-0 text-faint"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-xs text-ink">
+                        {s.title}
+                      </span>
+                      <span className="max-w-[45%] truncate text-[11px] text-dim">
+                        {s.artist}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : (
+              <p className="flex items-start gap-1.5 rounded-lg border border-line bg-bg p-2.5 text-[11px] leading-relaxed text-dim">
+                <WarningCircle size={13} className="mt-0.5 shrink-0 text-accent" />
+                Não achei nenhuma música com esse nome — confira a grafia.
+                Você ainda pode gerar assim mesmo.
+              </p>
+            )
+          )}
+        </div>
         <label className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-dim">
             Parte ou estilo (opcional)

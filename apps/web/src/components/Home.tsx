@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  CheckCircle,
   GithubLogo,
   Sparkle,
   Waveform,
@@ -17,6 +18,8 @@ interface HomeProps {
 
 export function Home({ status, onConnect, onDemo }: HomeProps) {
   const unsupported = status.kind === 'unsupported'
+  const requesting = status.kind === 'requesting'
+  const connected = status.kind === 'connected'
 
   return (
     <div className="mx-auto flex min-h-[100dvh] w-full max-w-2xl flex-col items-center justify-center px-6 py-16 text-center">
@@ -50,10 +53,14 @@ export function Home({ status, onConnect, onDemo }: HomeProps) {
         <button
           type="button"
           onClick={onConnect}
-          disabled={unsupported}
+          disabled={unsupported || requesting}
           className="flex h-11 cursor-pointer items-center gap-2 rounded-lg bg-accent px-5 text-sm font-semibold text-accent-ink transition-colors duration-200 hover:bg-accent-strong disabled:opacity-45"
         >
-          Conectar pedal via USB
+          {requesting
+            ? 'Pedindo permissão…'
+            : connected
+              ? 'Abrir editor'
+              : 'Conectar pedal via USB'}
           <ArrowRight size={15} weight="bold" />
         </button>
 
@@ -61,6 +68,16 @@ export function Home({ status, onConnect, onDemo }: HomeProps) {
           <span className="flex items-center gap-1.5 text-xs text-accent">
             <WarningCircle size={13} weight="fill" />
             Esse navegador não fala Web MIDI — abra em Chrome ou Edge
+          </span>
+        ) : connected ? (
+          <span className="flex items-center gap-1.5 text-xs text-ok">
+            <CheckCircle size={13} weight="fill" />
+            Pedal conectado: {status.name}
+          </span>
+        ) : status.kind === 'denied' ? (
+          <span className="flex items-center gap-1.5 text-xs text-accent">
+            <WarningCircle size={13} weight="fill" />
+            Permissão de MIDI negada — libere nas configurações do navegador
           </span>
         ) : status.kind === 'disconnected' ? (
           <span className="text-xs text-faint">
