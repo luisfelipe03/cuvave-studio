@@ -123,36 +123,33 @@ Já a área de RAM (`fx_ctrl_panel_write`) **não faz erase** — escreve direto
 Isso explica por que comandos disparados em sequência, sem intervalo, perdem a
 resposta: o pedal está ocupado com o erase.
 
-#### Escrever parâmetro não muda o som (encerrado em 15/08/2026)
+#### Escrever parâmetro não muda o som (REABERTO em 16/08/2026)
 
-**A escrita grava, mas o Cube Baby não a aplica ao áudio.** Isso foi investigado
-à exaustão com o pedal na mesa e está encerrado — não reabra sem informação nova.
+**Histórico:** em 15/08, uma manhã de testes mediu ≤1 dB de variação escrevendo
+em todos os caminhos (live `0x80000005`, persistente, float no bank 0x04,
+`save_0`, troca de preset) e concluiu que o DSP não aplica parâmetros — reforçado
+pelo binário (`write_Effect`/`OnSaveEffect` só existem nas dialogs AC/Jun).
 
-O que ficou provado:
+**MAS em 16/08 o reteste mediu mudança clara:** com os presets restaurados de
+fábrica e o preset A selecionado no footswitch, escrever volume=0x05 no endereço
+vivo `0x05 @ 0x80000005` **derrubou o nível em ~20 dB** (RMS 0.0029 → 0.0003,
+medido pela interface de áudio USB do pedal) e a restauração trouxe de volta
+(0.0039). O ACK foi `0x00` em todas as operações.
 
-- **`WriteMemory` grava mesmo.** Escrever `0x40` no volume do preset C e reler
-  na hora devolve `0x40`; restaurar devolve o valor anterior. Não é o nosso
-  código que falha
-- **O som não muda por nenhum caminho testado.** Medido pela própria interface
-  de áudio USB do pedal, com o preset A no gain máximo (o chiado do preamp serve
-  de sinal): `0x05 @ 0x80000005`, `0x05 @ 0x05`, float no bank `0x04`,
-  `save_0` depois de escrever, e trocar de preset no footswitch pra forçar
-  recarga — todos com queda ≤ 1 dB, dentro da variação do ruído
-- **O comando de troca de modo é recusado.** `0x50` (de `make_mode_change_packet`)
-  responde com conteúdo `0x01` — falha, na convenção do próprio firmware —
-  enquanto todo o resto responde `0x00`
+O que provavelmente invalidou o teste de 15/08: o pedal estava em bypass ou
+num estado pós-experimentos onde o DSP não lia a área viva. **Lição:** sempre
+selecionar o preset no footswitch antes de medir.
 
-E a explicação está no binário: `write_Effect`, `setEffectValue`,
-`onEffectValueChange` e `OnSaveEffect` existem em **`CCubeBabyCAIREditDlg`**
-(Cube Baby AC) e **`CCubeBabyJunIREditDlg`** (Jun), mas **não** em
-`CCubeBabyIREditDlg`, que é o deste pedal. A dialog do Cube Baby só edita IR e
-distância de microfone. **O fabricante nunca implementou edição de parâmetros
-por software neste modelo** — não há comando escondido a procurar.
+Pendências pra fechar:
 
-Consequência prática: o app lê presets e envia IR; a aplicação de parâmetros
-fica com os knobs do pedal. Se algum dia aparecer um firmware com `write_Effect`
-para este modelo, ou se valer a pena espionar o tráfego do CubeSuite com um
-monitor MIDI, aí sim vale reabrir.
+1. **Persistência sem live write**: escrever só o bank (48B) e trocar de preset
+   no footswitch (A→B→A) — o DSP recarrega do bank?
+2. **Persistência com power cycle**: escrever só o bank e desligar/ligar o pedal
+3. Se (1) ou (2) aplicarem, o fluxo completo do app é: editar ao vivo → salvar
+   (bank write) → aplicado de imediato ou após troca/boot
+
+Consequência prática: **a edição de parâmetros ao vivo FUNCIONA neste modelo** —
+o app ganha o editor em tempo real; falta confirmar a persistência.
 
 **Informação nova (16/08/2026) — vale UM reteste.** O projeto
 [MrGariZack/cubecontrol](https://github.com/MrGariZack/cubecontrol) documenta o
@@ -188,6 +185,11 @@ com o nosso codec — startup de 2026-08-09):
 Ou seja: o `0x12` (talvez "entrar em modo remoto") e a **escrita do bank
 inteiro** são os dois caminhos que a gente nunca tentou. Reteste pendente
 (sequência exata abaixo).
+
+**Testado no pedal (16/08/2026)**: `0x12` vazio responde `01 00 00 00 00 00`
+(6 bytes) — o comando existe e o firmware o aceita, mas o significado segue
+desconhecido (o decoder do projeto deles também o trata como `unknown`).
+Provável consulta de estado/modo.
 
 ### Mapa de memória
 
@@ -322,6 +324,8 @@ C: 01 07 07 05 34 6f 14 0c 05 02 01 01 01   US Gold Clean + chorus + Marshall 19
 - Divergência com o manual: o manual diz que C usa Marshall 1960A T75 (índice 3);
   o pedal usa índice 2 (Marshall 1960AV)
 - Os 3 flags de seção ficam `01 01 01` nos três presets de fábrica
+- Nota 16/08: após reset de fábrica (pelo usuário), o preset A voltou com
+  `mix=0x1e` (30) em vez de `0x00` — o reset oficial escreve mix=30 no A
 
 ## Suporte ao Tank-G (futuro)
 
