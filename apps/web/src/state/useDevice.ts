@@ -9,15 +9,19 @@ export type DeviceStatus =
   | { kind: 'disconnected' }
   | { kind: 'connected'; name: string }
 
+/** Par de portas MIDI do pedal — o que o usePedal precisa pra falar. */
+export interface PedalPorts {
+  input: MIDIInput
+  output: MIDIOutput
+}
+
 /**
  * Detecção do pedal via Web MIDI API.
  *
  * A permissão só é pedida quando `connect()` é chamado (ação explícita do
  * usuário, ex: botão "Conectar pedal") — nunca automaticamente ao carregar
- * a página.
- *
- * M1/M2: só identifica o dispositivo na lista de portas — ainda não fala o
- * protocolo (SysEx entra depois do dump de memória com o pedal físico).
+ * a página. Além do status, expõe as portas reais (input+output) pra camada
+ * de protocolo (usePedal) conversar com o pedal.
  */
 export function useDevice(profile: DeviceProfile) {
   const [status, setStatus] = useState<DeviceStatus>(() =>
@@ -25,14 +29,23 @@ export function useDevice(profile: DeviceProfile) {
       ? { kind: 'idle' }
       : { kind: 'unsupported' },
   )
+  const [ports, setPorts] = useState<PedalPorts | null>(null)
 
   const scan = useCallback(
     (access: MIDIAccess) => {
-      const names = Array.from(access.outputs.values(), (p) => p.name ?? '')
-      const match = names.find((n) => profile.detect.test(n))
-      setStatus(
-        match ? { kind: 'connected', name: match } : { kind: 'disconnected' },
-      )
+      const outputs = Array.from(access.outputs.values())
+      const inputs = Array.from(access.inputs.values())
+      const output = outputs.find((p) => profile.detect.test(p.name ?? ''))
+      const input = inputs.find((p) => profile.detect.test(p.name ?? ''))
+      const name = output?.name ?? input?.name
+
+      if (name && input && output) {
+        setStatus({ kind: 'connected', name })
+        setPorts({ input, output })
+      } else {
+        setStatus({ kind: 'disconnected' })
+        setPorts(null)
+      }
     },
     [profile],
   )
@@ -52,5 +65,5 @@ export function useDevice(profile: DeviceProfile) {
     )
   }, [scan])
 
-  return { status, connect }
+  return { status, connect, ports }
 }

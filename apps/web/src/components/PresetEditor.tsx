@@ -10,23 +10,22 @@ interface PresetEditorProps {
 }
 
 /**
- * Módulos da cadeia e sua condição de "ligado" (semântica do manual).
- * `id` aponta pro parâmetro real do profile que carrega o estado on/off —
- * não é necessariamente o mesmo nome do módulo (ex: delay é lido via `mix`,
- * "MIX no mínimo = delay off").
+ * Módulos da cadeia e seu estado de ligado. Os flags de seção são campos
+ * reais do bank (confirmado no M1) — são eles que mandam, não os valores:
+ * o preset A de fábrica tem mix=0 com delay_section=1.
  */
 const CHAIN: { id: string; label: string; isOn: (v: number) => boolean }[] = [
-  { id: 'preamp', label: 'Preamp', isOn: () => true },
+  { id: 'tone_section', label: 'Preamp', isOn: (v) => v > 0 },
   { id: 'mod', label: 'Mod', isOn: (v) => v <= 6 || v >= 9 },
-  { id: 'mix', label: 'Delay', isOn: (v) => v > 0 },
+  { id: 'delay_section', label: 'Delay', isOn: (v) => v > 0 },
   { id: 'reverb', label: 'Reverb', isOn: (v) => v > 0 },
-  { id: 'ir_cab', label: 'IR Cab', isOn: (v) => v > 0 },
+  { id: 'ir_section', label: 'IR Cab', isOn: (v) => v > 0 },
 ]
 
 export function PresetEditor({ profile, state }: PresetEditorProps) {
   const { activePreset: values, active, dirty, undoLabel } = state
-  const knobs = profile.parameters.filter((p) => !p.options)
-  const selectors = profile.parameters.filter((p) => p.options)
+  const knobs = profile.parameters.filter((p) => !p.options && !p.hidden)
+  const selectors = profile.parameters.filter((p) => p.options && !p.hidden)
 
   return (
     <div className="flex flex-col gap-5">

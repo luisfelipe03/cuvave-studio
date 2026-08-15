@@ -1,9 +1,17 @@
-import { useEffect, useRef, useState } from 'react'
-import { cubeBabyProfile, profiles } from 'profiles'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  cubeBabyProfile,
+  normalizeSections,
+  profiles,
+  sectionForParam,
+} from 'profiles'
+import type { PresetValues } from 'profiles'
 import { usePresets } from './state/usePresets'
 import { useDevice } from './state/useDevice'
+import { usePedal } from './state/usePedal'
 import { useCloudSync } from './state/useCloudSync'
 import { usePlaylists } from './state/usePlaylists'
+import { slotsToValues, valuesToSlots } from './lib/pedalBank'
 import {
   loadApiKey,
   loadGuitar,
@@ -56,6 +64,83 @@ export default function App() {
     setGuitar,
   })
 
+  // M2: a sessão de protocolo com o pedal (leitura, escrita viva, save).
+  const pedal = usePedal(device.ports)
+  const pedalReady =
+    device.status.kind === 'connected' && device.ports !== null && !demo
+
+  // Ao conectar, o pedal é a fonte da verdade: lê o bank e preenche o editor.
+  useEffect(() => {
+    if (device.status.kind !== 'connected' || !device.ports || demo) return
+    let cancelled = false
+    void pedal.readBank().then((slots) => {
+      if (cancelled || !slots) return
+      presetsState.replaceAll(slotsToValues(profile, slots))
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [device.status.kind, device.ports, demo])
+
+  /** Knob mexido: atualiza local + manda o write vivo pro pedal na hora. */
+  const applyParam = useCallback(
+    (paramId: string, value: number) => {
+      const slot = presetsState.active
+      presetsState.setParam(paramId, value)
+      const sec = sectionForParam(paramId, value)
+      if (sec) presetsState.setParam(sec.id, sec.value)
+      if (pedalReady) {
+        const offset = profile.bankOrder.indexOf(paramId)
+        if (offset >= 0) pedal.writeLive(slot, offset, value)
+        if (sec) {
+          const secOffset = profile.bankOrder.indexOf(sec.id)
+          if (secOffset >= 0) pedal.writeLive(slot, secOffset, sec.value)
+        }
+      }
+    },
+    [presetsState, pedalReady, pedal, profile],
+  )
+
+  /** Salvar: localStorage + imagem do bank no pedal (aplica e persiste). */
+  const persist = useCallback(() => {
+    presetsState.persist()
+    if (pedalReady) {
+      void pedal.saveBank(valuesToSlots(profile, presetsState.presets))
+    }
+  }, [presetsState, pedalReady, pedal, profile])
+
+  /**
+   * Aplicar preset externo (IA, playlist) num slot: além do estado local,
+   * empurra todos os campos visíveis do slot pro pedal como live writes —
+   * o pedal acompanha na hora.
+   */
+  const applyPreset = useCallback(
+    (index: number, values: PresetValues) => {
+      presetsState.applyPreset(index, values)
+      if (pedalReady) {
+        const normalized = normalizeSections(profile, values)
+        for (const param of profile.parameters) {
+          if (param.hidden) continue
+          const offset = profile.bankOrder.indexOf(param.id)
+          if (offset >= 0) pedal.writeLive(index, offset, normalized[param.id])
+        }
+      }
+    },
+    [presetsState, pedalReady, pedal, profile],
+  )
+
+  // O editor recebe o estado com os métodos enfaixados no pedal.
+  const editorState = useMemo(
+    () => ({
+      ...presetsState,
+      setParam: applyParam,
+      applyPreset,
+      persist,
+    }),
+    [presetsState, applyParam, applyPreset, persist],
+  )
+
   const unlocked = demo || device.status.kind === 'connected'
   const showEditor = screen === 'editor' && unlocked
 
@@ -84,6 +169,8 @@ export default function App() {
           demo={demo}
           user={cloud.user}
           syncStatus={cloud.status}
+          pedalStatus={pedal.status}
+          pedalError={pedal.error}
           onSignIn={cloud.signIn}
           onSignOut={cloud.signOut}
           onHome={goHome}
@@ -95,7 +182,7 @@ export default function App() {
         <>
           <EditorScreen
             profile={profile}
-            presetsState={presetsState}
+            presetsState={editorState}
             apiKey={apiKey}
             guitar={guitar}
             library={library}
@@ -105,7 +192,9 @@ export default function App() {
           />
           <p className="mx-auto max-w-[1400px] px-4 pb-8 text-xs text-faint sm:px-6">
             {device.status.kind === 'connected'
-              ? 'Comunicação real com o pedal entra no M2 — por enquanto os presets ficam salvos neste navegador.'
+              ? pedal.status === 'error'
+                ? `Erro ao falar com o pedal: ${pedal.error ?? 'desconhecido'}`
+                : 'Pedal conectado — knobs editam ao vivo; Salvar grava no pedal.'
               : 'Modo demo — nenhum pedal conectado. Presets ficam salvos neste navegador.'}
           </p>
         </>

@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
+  BANK_ADDRESS,
+  BANK_FIELD_COUNT,
+  BANK_MEMORY,
+  BANK_SIZE,
+  BANK_SLOT_BYTES,
   buildFrame,
   buildSysEx,
   checksum,
   decode7bit,
+  decodeBank,
   encode7bit,
+  encodeBank,
   isAck,
+  liveParamAddress,
   modeChange,
   parseFrame,
   parseReadResponse,
@@ -205,5 +213,52 @@ describe('buildSysEx', () => {
     expect(sysex[0]).toBe(0xf0)
     expect(sysex[sysex.length - 1]).toBe(0xf7)
     expect([...decode7bit(sysex)]).toEqual(ACK_REAL)
+  })
+})
+
+/**
+ * Bank real lido do pedal em 14/08/2026 (após reset de fábrica), com o
+ * volume do preset A em 0x41 e mix do A em 0x1e — exatamente os bytes que
+ * o pedal devolveu e que depois foram gravados de volta com sucesso.
+ */
+const BANK_REAL = [
+  0x07, 0x07, 0x09, 0x05, 0x34, 0x41, 0x14, 0x1e, 0x07, 0x04, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00,
+  0x04, 0x02, 0x05, 0x05, 0x2c, 0x46, 0x17, 0x1e, 0x07, 0x05, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00,
+  0x01, 0x07, 0x07, 0x05, 0x34, 0x6f, 0x14, 0x0c, 0x05, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00,
+]
+
+describe('bank', () => {
+  it('constantes batem com o mapa de memória confirmado', () => {
+    expect(BANK_MEMORY).toBe(0x05)
+    expect(BANK_ADDRESS).toBe(0x00000000)
+    expect(BANK_SIZE).toBe(48)
+    expect(BANK_SLOT_BYTES).toBe(16)
+    expect(BANK_FIELD_COUNT).toBe(13)
+  })
+
+  it('decodeBank separa os 3 slots de 13 campos do bank real', () => {
+    const slots = decodeBank(new Uint8Array(BANK_REAL))
+    expect(slots).toHaveLength(3)
+    expect(slots[0]).toEqual([0x07, 0x07, 0x09, 0x05, 0x34, 0x41, 0x14, 0x1e, 0x07, 0x04, 0x01, 0x01, 0x01])
+    expect(slots[1]).toEqual([0x04, 0x02, 0x05, 0x05, 0x2c, 0x46, 0x17, 0x1e, 0x07, 0x05, 0x01, 0x01, 0x01])
+    expect(slots[2]).toEqual([0x01, 0x07, 0x07, 0x05, 0x34, 0x6f, 0x14, 0x0c, 0x05, 0x02, 0x01, 0x01, 0x01])
+  })
+
+  it('encodeBank reconstrói byte a byte o bank real', () => {
+    const slots = decodeBank(new Uint8Array(BANK_REAL))
+    expect([...encodeBank(slots)]).toEqual(BANK_REAL)
+  })
+
+  it('liveParamAddress monta os endereços vivos por slot e campo', () => {
+    // volume do A/B/C = 0x80000005 / 0x15 / 0x25; type do C = 0x80000029
+    expect(liveParamAddress(0, 5)).toBe(0x80000005)
+    expect(liveParamAddress(1, 5)).toBe(0x80000015)
+    expect(liveParamAddress(2, 5)).toBe(0x80000025)
+    expect(liveParamAddress(2, 9)).toBe(0x80000029)
+  })
+
+  it('rejeita slot ou campo fora do range', () => {
+    expect(() => liveParamAddress(3, 0)).toThrow(/slot/)
+    expect(() => liveParamAddress(0, 13)).toThrow(/offset/)
   })
 })

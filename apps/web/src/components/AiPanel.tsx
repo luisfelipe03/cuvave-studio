@@ -45,7 +45,7 @@ function summarize(profile: DeviceProfile, values: PresetValues) {
     .filter((l): l is string => Boolean(l))
 
   const chips = profile.parameters
-    .filter((p) => !p.options)
+    .filter((p) => !p.options && !p.hidden)
     .map((p) => {
       const v = values[p.id]
       const zone = p.zones?.find((z) => v >= z.min && v <= z.max)

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import type { DeviceProfile, PresetValues } from 'profiles'
-import { clampValues } from 'profiles'
+import { clampValues, normalizeSections } from 'profiles'
 import { initialPresets, savePresets } from '../lib/storage'
 
 /**
@@ -39,7 +39,9 @@ export function usePresets(profile: DeviceProfile) {
     (index: number, values: PresetValues) => {
       setPresets((prev) => {
         setUndoable({ presets: prev, label: profile.presetLabels[index] })
-        return prev.map((p, i) => (i === index ? clampValues(profile, values) : p))
+        return prev.map((p, i) =>
+          i === index ? normalizeSections(profile, values) : p,
+        )
       })
       setActive(index)
       setDirty(true)

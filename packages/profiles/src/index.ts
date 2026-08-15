@@ -28,6 +28,8 @@ export interface Parameter {
   zones?: { label: string; min: number; max: number }[]
   /** valor padrão de fábrica (aproximado, confirmar no M1) */
   default: number
+  /** não aparece na UI (ex: flags de seção) — a UI filtra e o app gerencia */
+  hidden?: boolean
 }
 
 export interface DeviceProfile {
@@ -39,6 +41,11 @@ export interface DeviceProfile {
   presetCount: number
   presetLabels: string[]
   parameters: Parameter[]
+  /**
+   * Ordem dos ids dos parâmetros dentro de cada slot de 13 bytes do bank
+   * (dump real do M1). Inclui os flags de seção, que são campos de verdade.
+   */
+  bankOrder: string[]
   irFormat: {
     /** taxa de amostragem esperada pelo pedal (Hz) */
     sampleRate: number
@@ -121,6 +128,29 @@ export const cubeBabyProfile: DeviceProfile = {
       format: (v) => IR_CABS[v]?.label ?? String(v),
     },
     { id: 'volume', label: 'Volume', min: 0, max: 127, default: 100 },
+    // Flags de seção — campos reais do bank (offsets 10, 11 e 12), mas a UI
+    // não os mostra: o app os gerencia (mexer no knob liga/desliga o módulo).
+    { id: 'ir_section', label: 'Módulo IR', min: 0, max: 1, default: 1, hidden: true },
+    { id: 'delay_section', label: 'Módulo Delay', min: 0, max: 1, default: 1, hidden: true },
+    { id: 'tone_section', label: 'Módulo Amp', min: 0, max: 1, default: 1, hidden: true },
+  ],
+  // Ordem dos ids nos 13 bytes de cada slot do bank (confirmada no dump real
+  // e no save path do CubeSuite). Os 3 bytes finais de cada slot de 16 são
+  // padding.
+  bankOrder: [
+    'type',
+    'gain',
+    'tone',
+    'reverb',
+    'fb',
+    'volume',
+    'time',
+    'mix',
+    'mod',
+    'ir_cab',
+    'ir_section',
+    'delay_section',
+    'tone_section',
   ],
   irFormat: {
     sampleRate: 48000,
@@ -158,5 +188,46 @@ export function clampValues(
 export function defaultPresetValues(profile: DeviceProfile): PresetValues {
   const out: PresetValues = {}
   for (const param of profile.parameters) out[param.id] = param.default
+  return out
+}
+
+/**
+ * Regra de seção do pedal: mexer em certos knobs liga/desliga o módulo
+ * correspondente — mesma semântica dos knobs físicos (mix no mínimo desliga
+ * o delay, ir_cab em 0 desliga o IR, amp desligado volta a ligar ao mexer
+ * em type/gain/tone). Devolve o flag que deve acompanhar a mudança.
+ */
+export function sectionForParam(
+  paramId: string,
+  value: number,
+): { id: string; value: number } | null {
+  switch (paramId) {
+    case 'mix':
+      return { id: 'delay_section', value: value > 0 ? 1 : 0 }
+    case 'ir_cab':
+      return { id: 'ir_section', value: value > 0 ? 1 : 0 }
+    case 'type':
+    case 'gain':
+    case 'tone':
+      return { id: 'tone_section', value: 1 }
+    default:
+      return null
+  }
+}
+
+/**
+ * Aplica as regras de seção a um preset inteiro — usado pra normalizar
+ * presets vindos de fora (IA, playlists, banco) antes de virar estado.
+ */
+export function normalizeSections(
+  profile: DeviceProfile,
+  values: PresetValues,
+): PresetValues {
+  const out = { ...clampValues(profile, values) }
+  for (const param of profile.parameters) {
+    if (param.hidden) continue
+    const side = sectionForParam(param.id, out[param.id])
+    if (side) out[side.id] = side.value
+  }
   return out
 }

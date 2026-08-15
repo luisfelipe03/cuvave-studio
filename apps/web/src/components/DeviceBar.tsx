@@ -12,6 +12,7 @@ import {
 import type { DeviceProfile } from 'profiles'
 import type { DeviceStatus } from '../state/useDevice'
 import type { SyncStatus } from '../state/useCloudSync'
+import type { PedalLinkStatus } from '../state/usePedal'
 import type { User } from '../lib/firebase'
 import { DeviceSelector } from './DeviceSelector'
 
@@ -22,6 +23,8 @@ interface DeviceBarProps {
   demo: boolean
   user: User | null
   syncStatus: SyncStatus
+  pedalStatus: PedalLinkStatus
+  pedalError: string | null
   onSignIn: () => void
   onSignOut: () => void
   onHome: () => void
@@ -50,6 +53,8 @@ export function DeviceBar({
   demo,
   user,
   syncStatus,
+  pedalStatus,
+  pedalError,
   onSignIn,
   onSignOut,
   onHome,
@@ -110,6 +115,14 @@ export function DeviceBar({
             <StatusDot tone={text.tone} />
             <span className="max-w-[180px] truncate sm:max-w-none">
               {text.label}
+              {status.kind === 'connected' && pedalStatus === 'busy' && (
+                <span className="ml-1.5 text-faint">· sincronizando…</span>
+              )}
+              {status.kind === 'connected' && pedalStatus === 'error' && (
+                <span className="ml-1.5 text-danger">
+                  · {pedalError ?? 'erro de comunicação'}
+                </span>
+              )}
             </span>
           </div>
           {status.kind === 'unsupported' && (

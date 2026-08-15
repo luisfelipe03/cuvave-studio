@@ -167,6 +167,54 @@ function addressHeader(bank: number, address: number, size: number): number[] {
   ]
 }
 
+/** Bank dos presets: memória 0x05, endereço 0x00000000, imagem de 48 bytes. */
+export const BANK_MEMORY = Bank.Presets
+export const BANK_ADDRESS = 0x00000000
+/** Cada slot ocupa 16 bytes: 13 campos + 3 de padding. */
+export const BANK_SLOT_BYTES = 16
+export const BANK_FIELD_COUNT = 13
+export const BANK_SIZE = BANK_SLOT_BYTES * 3
+
+/** Endereço vivo de um campo: 0x80000000 + slot*16 + offset do campo (0–12). */
+export function liveParamAddress(slot: number, offset: number): number {
+  if (slot < 0 || slot > 2) throw new Error('slot deve ser 0 (A), 1 (B) ou 2 (C)')
+  if (offset < 0 || offset >= BANK_FIELD_COUNT)
+    throw new Error(`offset deve ser 0..${BANK_FIELD_COUNT - 1}`)
+  return 0x80000000 + slot * BANK_SLOT_BYTES + offset
+}
+
+/**
+ * Decodifica a imagem do bank (48 bytes) em 3 slots de 13 campos.
+ * Os 3 bytes de padding de cada slot ficam de fora — o encoder os
+ * devolve zerados.
+ */
+export function decodeBank(data: Uint8Array): number[][] {
+  if (data.length !== BANK_SIZE)
+    throw new Error(`bank deve ter ${BANK_SIZE} bytes, veio ${data.length}`)
+  const slots: number[][] = []
+  for (let s = 0; s < 3; s++) {
+    const start = s * BANK_SLOT_BYTES
+    slots.push([...data.slice(start, start + BANK_FIELD_COUNT)])
+  }
+  return slots
+}
+
+/** Monta a imagem de 48 bytes a partir de 3 slots de 13 campos. */
+export function encodeBank(slots: readonly (ArrayLike<number>)[]): Uint8Array {
+  if (slots.length !== 3)
+    throw new Error(`bank tem 3 slots, veio ${slots.length}`)
+  const out = new Uint8Array(BANK_SIZE)
+  slots.forEach((slot, s) => {
+    const start = s * BANK_SLOT_BYTES
+    for (let i = 0; i < BANK_FIELD_COUNT; i++)
+      out[start + i] = (slot[i] ?? 0) & 0xff
+    out[start + 13] = 0
+    out[start + 14] = 0
+    out[start + 15] = 0
+  })
+  return out
+}
+
 /** ReadMemory (0x23), pronto pro `send()`. */
 export function readMemory(
   bank: number,

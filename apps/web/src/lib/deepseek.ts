@@ -92,6 +92,7 @@ export function buildSystemPrompt(
   guitar?: string,
 ): string {
   const params = profile.parameters
+    .filter((p) => !p.hidden)
     .map((p) => {
       if (p.options) {
         const opts = p.options.map((o) => `${o.value}="${o.label}"`).join(', ')
