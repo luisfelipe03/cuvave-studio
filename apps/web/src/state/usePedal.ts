@@ -167,6 +167,9 @@ export function usePedal(ports: PedalPorts | null): PedalLink {
       if (!ports) return false
       try {
         setStatus('busy')
+        // Não deixa write vivo pendente passar por cima do save: esvazia a
+        // fila de lives antes de gravar a imagem do bank.
+        await flushLive()
         await handshake()
         const frame = await send(
           writeMemory(BANK_MEMORY, BANK_ADDRESS, encodeBank(slots)),
@@ -189,7 +192,7 @@ export function usePedal(ports: PedalPorts | null): PedalLink {
         return false
       }
     },
-    [ports, handshake, send],
+    [ports, flushLive, handshake, send],
   )
 
   return { status, error, readBank, writeLive, saveBank }

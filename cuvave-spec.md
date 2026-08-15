@@ -151,7 +151,9 @@ Notas:
 
 **Fluxo do app (M2):** ler bank (48B) → editar (write vivo a cada knob) →
 salvar (write do bank inteiro). Leitura do bank devolve os 48 bytes com
-checksum; escrita aplica e persiste na hora.
+checksum; escrita aplica e persiste na hora. Aplicar preset da IA/playlist
+também empurra pro pedal: live writes do slot + gravação do bank + local em
+dia — e o Desfazer restaura o pedal junto.
 
 **Informação nova (16/08/2026) — vale UM reteste.** O projeto
 [MrGariZack/cubecontrol](https://github.com/MrGariZack/cubecontrol) documenta o

@@ -72,6 +72,19 @@ export function usePresets(profile: DeviceProfile) {
     setDirty(false)
   }, [presets, profile])
 
+  /**
+   * Grava um conjunto explícito de presets no localStorage e limpa o flag
+   * de "alterações não salvas" — usado quando o save foi feito pelo pedal
+   * (o App conhece os valores que gravou, não precisa do estado atual).
+   */
+  const commitLocal = useCallback(
+    (next: PresetValues[]) => {
+      savePresets(profile, next)
+      setDirty(false)
+    },
+    [profile],
+  )
+
   return useMemo(
     () => ({
       presets,
@@ -79,6 +92,8 @@ export function usePresets(profile: DeviceProfile) {
       activePreset,
       dirty,
       undoLabel: undoable?.label ?? null,
+      /** snapshot anterior à última aplicação (IA/playlist), pra desfazer */
+      undoSnapshot: undoable?.presets ?? null,
       setActive,
       setParam,
       applyPreset,
@@ -86,6 +101,7 @@ export function usePresets(profile: DeviceProfile) {
       dismissUndo,
       replaceAll,
       persist,
+      commitLocal,
     }),
     [
       presets,
@@ -99,6 +115,7 @@ export function usePresets(profile: DeviceProfile) {
       dismissUndo,
       replaceAll,
       persist,
+      commitLocal,
     ],
   )
 }

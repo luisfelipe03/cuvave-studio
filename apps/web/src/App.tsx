@@ -111,24 +111,47 @@ export default function App() {
   }, [presetsState, pedalReady, pedal, profile])
 
   /**
-   * Aplicar preset externo (IA, playlist) num slot: além do estado local,
-   * empurra todos os campos visíveis do slot pro pedal como live writes —
-   * o pedal acompanha na hora.
+   * Aplicar preset externo (IA, playlist) num slot: estado local + todos os
+   * campos visíveis do slot como live writes (o pedal acompanha na hora) +
+   * gravação da imagem do bank (persiste na flash) + localStorage em dia.
    */
+  const lastAppliedSlot = useRef<number | null>(null)
+
+  const pushSlotToPedal = useCallback(
+    async (index: number, all: PresetValues[]) => {
+      const normalized = normalizeSections(profile, all[index])
+      for (const param of profile.parameters) {
+        if (param.hidden) continue
+        const offset = profile.bankOrder.indexOf(param.id)
+        if (offset >= 0) pedal.writeLive(index, offset, normalized[param.id])
+      }
+      const ok = await pedal.saveBank(valuesToSlots(profile, all))
+      if (ok) presetsState.commitLocal(all)
+    },
+    [pedal, presetsState, profile],
+  )
+
   const applyPreset = useCallback(
     (index: number, values: PresetValues) => {
+      const next = presetsState.presets.map((p, i) =>
+        i === index ? normalizeSections(profile, values) : p,
+      )
+      lastAppliedSlot.current = index
       presetsState.applyPreset(index, values)
-      if (pedalReady) {
-        const normalized = normalizeSections(profile, values)
-        for (const param of profile.parameters) {
-          if (param.hidden) continue
-          const offset = profile.bankOrder.indexOf(param.id)
-          if (offset >= 0) pedal.writeLive(index, offset, normalized[param.id])
-        }
-      }
+      if (pedalReady) void pushSlotToPedal(index, next)
     },
-    [presetsState, pedalReady, pedal, profile],
+    [presetsState, pedalReady, pushSlotToPedal, profile],
   )
+
+  /** Desfazer uma aplicação também empurra os valores antigos pro pedal. */
+  const undoApply = useCallback(() => {
+    const prev = presetsState.undoSnapshot
+    const slot = lastAppliedSlot.current
+    presetsState.undoApply()
+    if (pedalReady && prev && slot !== null && prev[slot]) {
+      void pushSlotToPedal(slot, prev)
+    }
+  }, [presetsState, pedalReady, pushSlotToPedal])
 
   // O editor recebe o estado com os métodos enfaixados no pedal.
   const editorState = useMemo(
@@ -136,9 +159,10 @@ export default function App() {
       ...presetsState,
       setParam: applyParam,
       applyPreset,
+      undoApply,
       persist,
     }),
-    [presetsState, applyParam, applyPreset, persist],
+    [presetsState, applyParam, applyPreset, undoApply, persist],
   )
 
   const unlocked = demo || device.status.kind === 'connected'
