@@ -164,6 +164,9 @@ function sanitizeTuning(raw: unknown): Tuning {
     ? obj.notes
         .map((n) => (typeof n === 'string' ? n.trim().toUpperCase() : ''))
         .filter((n) => /^[A-G](?:#|B)?$/.test(n))
+        // Bemol se escreve com "b" minúsculo: sem isso, Eb standard (Guns
+        // N' Roses, Hendrix, Van Halen) apareceria como "EB" nas cordas.
+        .map((n) => (n.length === 2 && n[1] === 'B' ? `${n[0]}b` : n))
         .slice(0, 6)
     : []
   if (notes.length !== 6) return STANDARD_TUNING
