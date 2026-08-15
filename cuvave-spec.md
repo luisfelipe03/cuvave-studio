@@ -506,10 +506,10 @@ endereçamento de memória e conversão de IR. O protocolo de transporte
 1. **M1** — Validar protocolo com hardware (pedal chega: Web MIDI no Chrome,
    dump de memória, mapear `type` ↔ efeitos, confirmar incógnitas)
 2. **M2** — Camada MIDI (core protocolo + Web MIDI) + editor manual dos 3 presets
-   — **implementado (16/08/2026)**: usePedal (sessão serializada, ACK, timeout),
+   — **fechado (16/08/2026)**: usePedal (sessão serializada, ACK, timeout),
    leitura do bank ao conectar, write vivo por knob com coalescência, Salvar =
-   imagem do bank (aplica + persiste). Falta validar no pedal pelo app
-   (a bancada já validou os mesmos comandos no hardware)
+   imagem do bank (aplica + persiste). Validado no app com o pedal: knob do site
+   apaga o LED do knob físico, e save + power cycle mantém a configuração
    + primeiro deploy no Firebase Hosting (link pros amigos testarem no Windows)
 3. **M3** — Envio de IRs
 4. **M4** — Gerador de presets por IA (DeepSeek direto do browser)

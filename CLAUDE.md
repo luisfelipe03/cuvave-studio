@@ -99,8 +99,10 @@ sincronização no Firestore.
 - **Roadmap:** o **M1 fechou** (16/08/2026): codec implementado e testado,
   leitura de presets funcionando, **escrita viva e persistência confirmadas
   com mudança de áudio (~20 dB) e power cycle** — a pedaleira é programável
-  por software. O próximo é o **M2** — ligar o app ao pedal —, e o M3 já tem
-  alvo conhecido.
+  por software. **M2 fechou** (16/08/2026): o app fala com o pedal de
+  verdade — knobs do site mudam o som na hora (até o LED físico acompanha),
+  Salvar grava no bank e persiste. Próximo: **M3** (envio de IR — formato já
+  resolvido) e o fluxo de IA aplicando no pedal em tempo real.
 - **A bancada de testes** vive em `apps/web/bancada.html` + `src/bancada.ts`,
   fora do build de produção. Abre em `localhost:5173/bancada.html` e serve pra
   qualquer diagnóstico novo com o pedal: conecta, lê presets, faz diff de knobs,
