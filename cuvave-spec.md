@@ -65,6 +65,10 @@ Fonte: [pferreir/cuvave-midi](https://github.com/pferreir/cuvave-midi) (Rust, GP
 Referência de framing: [mvave-chocolate-sysex](https://github.com/cbix/mvave-chocolate-sysex)
 Referência local: **CubeSuite.app** (Qt, `/Applications/CubeSuite.app`) — o app oficial instalado
 no Mac, usado como oráculo de engenharia reversa
+Referência de terceiros (MIT): [MrGariZack/cubecontrol](https://github.com/MrGariZack/cubecontrol) —
+biblioteca de protocolo + CLI com o "save path" do CubeSuite (handshake + escrita do bank inteiro +
+register write 0x24) e o formato do IR ROM; [MrGariZack/cubecontrol-app](https://github.com/MrGariZack/cubecontrol-app) —
+editor desktop Electron/RtMidi. MIT é compatível com nosso GPL-3 se quisermos reaproveitar código
 
 - O pedal é um dispositivo **USB MIDI class-compliant** (SysEx)
 - Confirmado pelo CubeSuite no macOS: usa **CoreMIDI** (`MidiInCore`/`MidiOutCore`), sem driver
@@ -149,6 +153,41 @@ Consequência prática: o app lê presets e envia IR; a aplicação de parâmetr
 fica com os knobs do pedal. Se algum dia aparecer um firmware com `write_Effect`
 para este modelo, ou se valer a pena espionar o tráfego do CubeSuite com um
 monitor MIDI, aí sim vale reabrir.
+
+**Informação nova (16/08/2026) — vale UM reteste.** O projeto
+[MrGariZack/cubecontrol](https://github.com/MrGariZack/cubecontrol) documenta o
+"save path" do CubeSuite com três elementos que **não foram testados** na
+investigação original:
+
+1. **Handshake antes de cada operação**: pedido de identidade (`0x11` vazio) +
+   80 ms de espera antes de escrever/ler
+2. **Escrita do bank inteiro (48 bytes)**, não de bytes avulsos: ler bank →
+   escrever 1 byte vivo → escrever os 48 bytes do bank → reler pra conferir
+3. **Register write `0x24`** (`content = memory(1) + addr LE32 + value LE32`):
+   é o "Mystery1/2" do cuvave-midi — escreve registradores do DSP (flag de IR em
+   `0x04 @ 0x0764` e distância do microfone em `0x04 @ 0x0768`). A distância é
+   audível por definição (100% = silêncio), então esse teste confirma se o
+   caminho de registro chega no DSP
+
+Atenção ao detalhe: o projeto deles interpreta o ACK ao contrário
+(`accepted = rawValue > 0`); a nossa evidência (binário `make_responds_packet`
++ escrita que gravou com ACK `0x00`) diz `0x00` = sucesso.
+
+**Capturas reais do tráfego do CubeSuite** (fixtures do repo deles, decodificadas
+com o nosso codec — startup de 2026-08-09):
+
+- **Startup**: `0x11` vazio → resposta; lê `0x00 @ 0x2100` (20 bytes); envia
+  **`0x12` vazio** (comando desconhecido — resposta de 6 bytes!); lê o bank
+  (`0x05 @ 0x0000`, **48 bytes**); lê `0x00 @ 0x3000` (loopback)
+- **Save**: WriteMemory live `0x05 @ 0x80000005` (volume=0x64, 1 byte) → ACK 00 →
+  WriteMemory do **bank inteiro de 48 bytes** em `0x05 @ 0x0000` → ACK 00 →
+  relê 48 bytes pra conferir. Sem erase
+- **Edição de parâmetro** (gain): stream de writes vivos de 1 byte em
+  `0x80000001`, cada um com ACK 00
+
+Ou seja: o `0x12` (talvez "entrar em modo remoto") e a **escrita do bank
+inteiro** são os dois caminhos que a gente nunca tentou. Reteste pendente
+(sequência exata abaixo).
 
 ### Mapa de memória
 
