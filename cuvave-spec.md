@@ -71,6 +71,11 @@ no Mac, usado como oráculo de engenharia reversa
 - Strings do binário confirmam o protocolo: o fluxo de upload espera resposta com tipo `0x23`
   (dados de leitura) ou **`0x30`** (`"get_upload_responds::Data type not 0x30!"` — provável ACK
   de escrita/erase, ainda não mapeado no cuvave-midi), validação de checksum, fluxo de erase
+- **Confirmado no hardware (14/08/2026)**: o pedido NameVersion respondeu com checksum válido.
+  Nome do dispositivo: `SINCO-CubeBaby` (19 bytes de nome + mistério: `01 13 14 15 16 17 18 19`,
+  8 bytes de significado ainda desconhecido — provável versão de firmware). No Web MIDI do
+  Chrome o pedal aparece com nome genérico **"USB2.0 Device"** — a detecção não pode confiar
+  só no nome
 - O CubeSuite é multi-dispositivo (Cube Baby, Baby Bass, Cube Baby AC, Looper, Synth,
   Micro…) — mesma ideia da arquitetura de profiles deste projeto
 - Frame SysEx: `F0 ... F7`, com codificação interna "bit-shift" de 7 bits
@@ -98,7 +103,14 @@ modulation, cabinet, ir_section, delay_section, tone_section
 ```
 
 - `type` seleciona o efeito; os demais parâmetros mudam de significado conforme o tipo
-- Presets: A = 0x00, B = 0x10, C = 0x20
+- Presets: A = 0x00, B = 0x10, C = 0x20 — **stride de 16 bytes**: 13 usados + 3 de
+  padding (`00 00 00`), confirmado no dump real (14/08/2026)
+- **Confirmado no hardware**: a ordem dos bytes acima bate com o dump dos presets
+  de fábrica (ver abaixo) — o range de cada parâmetro bate com o schema do app
+- **Sections são o on/off real**: `delay_section`/`ir_section`/`tone_section` são os
+  flags do módulo; valor mínimo do knob (ex: `mix=0`) não significa módulo off —
+  o preset A de fábrica tem `mix=0` com `delay_section=1`. A UI da cadeia deve
+  ler os flags, não inferir dos valores
 
 ### Detalhes do hardware (manual oficial)
 
@@ -157,11 +169,23 @@ modulation, cabinet, ir_section, delay_section, tone_section
 - 8 posições de IR; importar sobrescreve o slot escolhido
 - **IR Distance** (f32 em `0x04 0x0768`): simulador de distância do microfone — mais perto = mais alto; 100% = silêncio
 
-#### Presets de fábrica
+#### Presets de fábrica (dump real, 14/08/2026)
 
-- A: Wo Stone Coral OD + DELAY + REVERB + VHT Deliverance 2×12 (distortion)
-- B: Cali JP A + DELAY + REVERB + Soldano 2×12 V30 (overdrive)
-- C: US Gold 100 Clean + CHORUS + DELAY + REVERB + Marshall 1960A T75 LA610 (clean)
+Valores lidos do pedal por ReadMemory (0x05 @ 0x0000, 45 bytes) — o manual
+descreve os mesmos presets; o firmware é a verdade quando divergir:
+
+```
+A: 07 07 09 05 34 41 14 00 07 04 01 01 01   Wo Stone Coral OD + VHT ✓
+B: 04 02 05 05 2c 46 17 1e 07 05 01 01 01   Cali JP A + Soldano ✓
+C: 01 07 07 05 34 6f 14 0c 05 02 01 01 01   US Gold Clean + chorus + Marshall 1960AV
+```
+
+- A: type=7, gain=7, tone=9, reverb=5, fb=52, vol=65, time=20, mix=0, mod=7(off), cab=4(VHT)
+- B: type=4, gain=2, tone=5, reverb=5, fb=44, vol=70, time=23, mix=30, mod=7(off), cab=5(Soldano)
+- C: type=1, gain=7, tone=7, reverb=5, fb=52, vol=111, time=20, mix=12, mod=5(chorus), cab=2(Marshall 1960AV)
+- Divergência com o manual: o manual diz que C usa Marshall 1960A T75 (índice 3);
+  o pedal usa índice 2 (Marshall 1960AV)
+- Os 3 flags de seção ficam `01 01 01` nos três presets de fábrica
 
 ## Suporte ao Tank-G (futuro)
 
@@ -216,9 +240,9 @@ A IA funciona igual: o system prompt passa a descrever a cadeia do Tank-G
 2. Intervalos de cada parâmetro por efeito (MOD 0–15 e ranges dos knobs mapeados; falta confirmar no dump de memória)
 3. Formato exato do IR: amostragem é 48kHz/24bit; falta a conversão WAV → f32 do pedal
 4. ~~macOS reconhece o pedal como MIDI sem driver~~ — **resolvido**: CubeSuite usa CoreMIDI no Mac
-5. **O pedal aparece no Web MIDI do Chrome?** (desktop e Android/OTG) — primeiro teste do M1,
-   assim que o pedal chegar: `navigator.requestMIDIAccess({ sysex: true })` no console
-   e conferir se o Cube Baby está na lista de outputs
+5. ~~O pedal aparece no Web MIDI do Chrome?~~ — **resolvido no desktop** (14/08/2026):
+   aparece como "USB2.0 Device" e respondeu NameVersion com checksum válido.
+   Falta confirmar Android/OTG
 6. Tipo de resposta `0x30` no fluxo de upload (ACK de escrita/erase?) — mapear no dump
 7. Windows reconhece o pedal via Web MIDI em Chrome — suportado pelo Chromium
    (class-compliant USB MIDI nativo), mas validar com um amigo no primeiro build
