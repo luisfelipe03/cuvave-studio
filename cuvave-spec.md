@@ -380,8 +380,12 @@ A IA funciona igual: o system prompt passa a descrever a cadeia do Tank-G
 
 ## Incógnitas (validar com o pedal na mão)
 
-1. Confirmação byte ↔ knob: nomes dos preamps são conhecidos (tabela acima); falta confirmar se o byte `type` = posição do knob (0–8) e o layout exato dos 13 bytes
-2. Intervalos de cada parâmetro por efeito (MOD 0–15 e ranges dos knobs mapeados; falta confirmar no dump de memória)
+1. ~~Confirmação byte ↔ knob~~ — **resolvido (16/08)**: o layout dos 13 bytes bate
+   com o dump real dos presets de fábrica, e a escrita viva de cada campo mudou
+   o áudio (volume −20 dB medido) — `bankOrder` no profile é a verdade
+2. ~~Intervalos de cada parâmetro~~ — **resolvido em parte**: o dump de fábrica e
+   os writes reais confirmam os ranges do profile; os extremos (0/max) não foram
+   todos exercitados no áudio, mas o clamp por schema já os cobre
 3. ~~Formato exato do IR~~ — **resolvido no binário**: 512 amostras `float32`
    precedidas da distância (bloco de `0x804` bytes em `0x04 0x0768`), com a flag
    `0x764` desligada durante o envio. Falta só escrever o conversor WAV → 512 taps
@@ -389,17 +393,19 @@ A IA funciona igual: o system prompt passa a descrever a cadeia do Tank-G
 5. ~~O pedal aparece no Web MIDI do Chrome?~~ — **resolvido no desktop** (14/08/2026):
    aparece como "USB2.0 Device" e respondeu NameVersion com checksum válido.
    Falta confirmar Android/OTG
-6. Tipo de resposta `0x30` no fluxo de upload (ACK de escrita/erase?) — ainda sem
-   explicação. O que o pedal responde a WriteMemory é tipo `0x00` com conteúdo
-   `0x00`, e isso já está entendido (é sucesso); o `0x30` aparece só no
-   `get_upload_responds`, um fluxo que ainda não exercitamos
-8. **Onde ficam os parâmetros ao vivo**: o `0x05 0x80000000+` do cuvave-midi lê
-   zeros e não existe no binário oficial. O caminho de RAM que o CubeSuite usa é
-   o bank `0x04` (`fx_ctrl_panel_write`), mas os offsets dos parâmetros do preset
-   dentro dele são desconhecidos — o binário só mostra os de IR (`0x764`+)
+6. Tipo de resposta `0x30` no fluxo de upload — ainda sem explicação. O pedal
+   responde a WriteMemory com tipo `0x00` conteúdo `0x00` (sucesso); o `0x30`
+   aparece só em `get_upload_responds` do binário, fluxo que não exercitamos
 7. Windows reconhece o pedal via Web MIDI em Chrome — suportado pelo Chromium
    (class-compliant USB MIDI nativo), mas validar com um amigo no primeiro build
    (é a plataforma real dos amigos; só o desenvolvedor usa Mac)
+8. Comando `0x12` (vazio, resposta `01 00 00 00 00 00`) — o pedal aceita, o
+   CubeSuite manda no startup, mas o significado é desconhecido (provável
+   consulta de modo/estado). Não bloqueia nada
+
+Nota: o `0x05 0x80000000+` **lê zeros mas é write-only funcional** — os writes
+vivos aplicam no DSP na hora (confirmado com áudio e com LED físico). A leitura
+dessa área é inútil; o estado real vem do bank persistente (0x05 @ 0x0000).
 
 Plano: ao conectar o pedal, fazer dump de memória (ReadMemory) e comparar com o
 app original para mapear os efeitos. O CubeSuite instalado no Mac acelera isso:
@@ -432,10 +438,10 @@ basta capturar o tráfego MIDI dele (CoreMIDI) ou comparar os blobs de fábrica
 
 ```
 Monorepo TypeScript
- ├─ packages/protocol     ← core compartilhado (framing, checksum, codec)
- ├─ packages/profiles     ← perfis de dispositivo (JSON/TS)
+ ├─ packages/protocol     ← core compartilhado (framing, checksum, codec, bank)
+ ├─ packages/profiles     ← perfis de dispositivo (params, bankOrder, seções)
  └─ apps/web (React + Vite + TS)
-      ├─ Transporte: Web MIDI API (requestMIDIAccess, sysex: true)
+      ├─ Transporte: Web MIDI API (useDevice → portas; usePedal → sessão)
       ├─ IA: HTTP direto → api.deepseek.com (CORS liberado, key do usuário)
       ├─ Firebase: Hosting (deploy = link) + Auth + Firestore (presets) + Storage (IRs)
       └─ Local: presets/keys em localStorage/IndexedDB
@@ -452,6 +458,25 @@ Monorepo TypeScript
   Functions** — a DeepSeek aceita chamada direta do browser (CORS testado), então
   cada usuário usa a própria key e não existe proxy nem plano pago (Blaze)
 
+### Camada do pedal (M2, implementada)
+
+- `useDevice`: detecta o pedal (regex `detect`, aceita "USB2.0 Device") e expõe
+  as **portas** MIDI (input+output)
+- `usePedal`: a sessão de protocolo — **fila serializada** (uma requisição em
+  voo por vez; o pedal ignora rajadas), handshake de identidade antes de bursts,
+  ACK validado, timeout de 2 s. Operações: `readBank()` (48 bytes, decode em
+  3 slots de 13 campos), `writeLive(slot, offset, value)` (coalescido — arrastar
+  knob manda só o último valor), `saveBank(slots)` (espera o flush dos lives,
+  escreve a imagem, relê e confere)
+- No `App`, o `editorState` enfaixa os métodos do `usePresets`:
+  - `setParam` → estado local + write vivo (+ flag de seção quando o knob
+    liga/desliga módulo — `sectionForParam`)
+  - `persist` → localStorage + `saveBank`
+  - `applyPreset` (IA/playlist) → live writes do slot + `saveBank` +
+    `commitLocal` (localStorage em dia, dirty limpo)
+  - `undoApply` → restaura local **e** empurra os valores antigos pro pedal
+- Ao conectar, o pedal é a **fonte da verdade**: `readBank` → `replaceAll`
+
 ### Perfis de dispositivo (Device Profiles)
 
 Cada pedal = um profile declarativo. O restante do app (UI, IA, bibliotecas) é
@@ -462,16 +487,18 @@ interface DeviceProfile {
   id: string                 // ex: "cube-baby", "tank-g"
   name: string
   transport: "usb-midi"
-  detect: { name?: RegExp }  // como identificar o dispositivo na lista MIDI
-  memoryMap: { ... }         // endereços (settings, IR, presets...)
-  parameters: Parameter[]    // schema: nomes, ranges, tipos
-  irFormat: { ... }          // conversão WAV → formato do pedal
-  buildSysEx(preset): SysEx  // conversor de preset → mensagens
+  detect: RegExp             // como identificar o dispositivo na lista MIDI
+  presetCount: number
+  presetLabels: string[]     // ex: ["A", "B", "C"]
+  parameters: Parameter[]    // schema: min/max, options, zones, hidden (flags)
+  bankOrder: string[]        // ids dos 13 campos de cada slot do bank (dump real)
+  irFormat: { sampleRate, slots, distanceRange }
 }
 ```
 
-O profile descreve: número de presets, cadeia de efeitos, parâmetros com ranges,
-endereçamento de memória e conversão de IR. O protocolo de transporte
+O profile descreve: número de presets, cadeia de efeitos, parâmetros com ranges
+(incluindo os flags de seção como parâmetros `hidden`), a ordem dos campos no
+bank e a conversão de IR. O protocolo de transporte
 (framing `F0 00 32 ... F7`, base-128, checksum) é compartilhado — família Cuvave/M-VAVE.
 
 ## Especificação da IA
@@ -505,16 +532,22 @@ endereçamento de memória e conversão de IR. O protocolo de transporte
 
 ## Roadmap
 
-1. **M1** — Validar protocolo com hardware (pedal chega: Web MIDI no Chrome,
-   dump de memória, mapear `type` ↔ efeitos, confirmar incógnitas)
-2. **M2** — Camada MIDI (core protocolo + Web MIDI) + editor manual dos 3 presets
-   — **fechado (16/08/2026)**: usePedal (sessão serializada, ACK, timeout),
-   leitura do bank ao conectar, write vivo por knob com coalescência, Salvar =
-   imagem do bank (aplica + persiste). Validado no app com o pedal: knob do site
-   apaga o LED do knob físico, e save + power cycle mantém a configuração
-   + primeiro deploy no Firebase Hosting (link pros amigos testarem no Windows)
-3. **M3** — Envio de IRs
-4. **M4** — Gerador de presets por IA (DeepSeek direto do browser)
+1. **M1** — Validar protocolo com hardware — **fechado (16/08/2026)**: codec no
+   binário do CubeSuite + vetores reais (29 testes), dump dos presets de fábrica,
+   escrita viva e persistência confirmadas com áudio (−20 dB) e power cycle
+2. **M2** — Camada MIDI + editor manual + app ligado ao pedal — **fechado
+   (16/08/2026)**: usePedal (sessão serializada, ACK, timeout, coalescência),
+   leitura do bank ao conectar, write vivo por knob, Salvar = imagem do bank.
+   Validado no app: knob do site apaga o LED físico; save sobrevive power cycle.
+   Primeiro deploy no Firebase Hosting (amigos testam no Windows) já no ar
+3. **M3** — Envio de IRs — próximo alvo: o formato está resolvido (512 amostras
+   float32 + distância, flag `0x764`, bloco `0x04 @ 0x768`; ROM com erase +
+   chunks em `0x00 @ 0x70000`). Falta o conversor WAV → 512 taps e ligar o
+   painel de IR da UI no fluxo real
+4. **M4** — Gerador de presets por IA — **fechado em essência**: geração direta
+   no browser (1 preset por vez, biblioteca, playlists, autocompletar de música,
+   afinação + captador) e **aplicação direto no pedal** (live writes + save +
+   desfazer sincronizado). Iteração do system prompt continua aberta
 5. **M5** — Refino de UI/UX (foco: simples, bonito, user friendly)
 6. **M6** — Firebase Auth + Firestore: presets na nuvem, sincronização e
    compartilhamento com amigos (Security Rules: cada usuário só lê/escreve os

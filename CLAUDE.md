@@ -83,31 +83,55 @@ engenharia reversa — não porque seja a plataforma-alvo.
 - ~~**Se o byte `type` é 0-based ou 1-based**~~ — **resolvido**: é 0-based. No
   dump, o preset A tem `type=7` (Wo Stone Coral OD) e `cab=4` (VHT), exatamente
   os índices do profile.
-- **Onde ficam os parâmetros ao vivo.** O `0x05 0x80000000+` que o cuvave-midi
-  documenta lê só zeros e **não aparece no binário do CubeSuite**. O caminho de
-  RAM do software oficial é o bank `0x04`. Ver a ressalva na spec.
+- ~~**Onde ficam os parâmetros ao vivo**~~ — **resolvido (16/08)**: `0x05
+  0x80000000+` é **write-only** — lê zeros, mas o write vivo aplica no DSP na
+  hora (confirmado com áudio e LED físico). O estado real vem do bank
+  persistente (0x05 @ 0x0000, 48 bytes).
+- **Comando `0x12`** (vazio → resposta `01 00 00 00 00 00`): o pedal aceita e o
+  CubeSuite manda no startup, mas o significado é desconhecido. Não bloqueia nada.
 
 ## Estado atual
 
-Funciona hoje, em modo demo (sem pedal): editor de presets com knobs, geração
-por IA (1 preset por vez, com biblioteca e playlists), login Google opcional e
-sincronização no Firestore.
+O app fala com o pedal de verdade (M2 fechado, validado no hardware): knobs do
+site mudam o som na hora (até o LED físico acompanha), Salvar grava no bank e
+persiste power cycle. IA/playlists aplicam direto no pedal (live + save +
+desfazer sincronizado).
 
 - **No ar:** https://cuvave-studio.web.app (projeto Firebase `cuvave-studio`)
 - **Falta 1 passo manual:** ativar o provedor Google em Authentication no
   console do Firebase. Sem isso o botão "Entrar" não funciona.
-- **Roadmap:** o **M1 fechou** (16/08/2026): codec implementado e testado,
+- **Roadmap:** **M1 fechou** (16/08/2026): codec implementado e testado,
   leitura de presets funcionando, **escrita viva e persistência confirmadas
   com mudança de áudio (~20 dB) e power cycle** — a pedaleira é programável
-  por software. **M2 fechou** (16/08/2026): o app fala com o pedal de
-  verdade — knobs do site mudam o som na hora (até o LED físico acompanha),
-  Salvar grava no bank e persiste. Próximo: **M3** (envio de IR — formato já
-  resolvido) e o fluxo de IA aplicando no pedal em tempo real.
+  por software. **M2 fechou** (16/08/2026): o app fala com o pedal — ver
+  "Camada do pedal" abaixo. Próximo: **M3** (envio de IR — formato já
+  resolvido: 512 amostras float32 + distância em `0x04 @ 0x768`, flag
+  `0x764`, ROM com erase + chunks em `0x00 @ 0x70000`; falta o conversor
+  WAV → 512 taps e ligar o painel de IR da UI).
 - **A bancada de testes** vive em `apps/web/bancada.html` + `src/bancada.ts`,
   fora do build de produção. Abre em `localhost:5173/bancada.html` e serve pra
   qualquer diagnóstico novo com o pedal: conecta, lê presets, faz diff de knobs,
   mede áudio pela interface USB do próprio pedal e restaura os presets de
   fábrica. Reaproveite em vez de improvisar no console.
+
+### Camada do pedal (M2) — como o código está organizado
+
+- `useDevice` (`state/useDevice.ts`): detecta o pedal e expõe **portas** MIDI
+- `usePedal` (`state/usePedal.ts`): sessão — **fila serializada** (uma
+  requisição em voo por vez), handshake de identidade antes de bursts, ACK
+  validado, timeout 2 s, live writes **coalescidos**, `saveBank` espera o
+  flush e relê pra conferir
+- `lib/pedalBank.ts`: conversão valores ↔ slots de 13 campos (via
+  `profile.bankOrder`) e ↔ imagem de 48 bytes
+- `App.tsx` enfaixa `usePresets` no `editorState`:
+  `setParam` → local + write vivo (+ `sectionForParam` pro flag de módulo),
+  `persist` → local + `saveBank`, `applyPreset` (IA/playlist) → live + save +
+  `commitLocal`, `undoApply` → restaura local E no pedal. Ao conectar,
+  `readBank` → `replaceAll` (pedal é a fonte da verdade)
+- Profiles: flags de seção (`ir_section`/`delay_section`/`tone_section`) são
+  parâmetros `hidden` — a UI filtra, o app gerencia; `bankOrder` lista os 13
+  campos na ordem do bank; `sectionForParam`/`normalizeSections` aplicam a
+  semântica dos knobs físicos (mix=0 desliga delay etc.)
 
 ## Como trabalhar aqui
 
