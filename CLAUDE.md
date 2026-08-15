@@ -55,17 +55,37 @@ engenharia reversa — não porque seja a plataforma-alvo.
 - **O SDK do Firebase (~550 kB) é carregado sob demanda.** Só baixa para quem
   clica em entrar ou já entrou. Não converta para import estático — o bundle
   inicial pularia de ~320 kB para ~846 kB para todo mundo.
+- **Escrever parâmetro não muda o som deste pedal. Assunto encerrado
+  (15/08/2026).** A escrita grava (releitura confirma), mas o áudio não muda por
+  nenhum caminho: os dois endereços de preset, float no bank `0x04`, `save_0`,
+  troca de preset no footswitch, e o comando de modo `0x50` (que o pedal
+  **recusa**, respondendo `0x01`). Motivo, achado no binário: `write_Effect` e
+  `OnSaveEffect` existem nas dialogs do Cube Baby **AC** e **Jun**, e não na do
+  Cube Baby comum — o fabricante não implementou isso neste modelo. Custou uma
+  manhã inteira de testes com o pedal; ver a seção da spec antes de tentar de
+  novo. **Não reabra sem informação nova** (firmware novo, ou captura do
+  tráfego real do CubeSuite).
+- **O binário do CubeSuite não está stripped — use-o antes de adivinhar.**
+  `/Applications/CubeSuite.app/Contents/MacOS/CubeSuite` (x86_64) traz os
+  símbolos C++ inteiros de `CUSBConnect`. `nm -C` lista a API, e `objdump -d`
+  dá o algoritmo. Foi assim que saíram o checksum, o empacotamento de 7 bits, a
+  semântica do ACK e o formato do IR — tudo sem arriscar comando no hardware.
+  Gere o disassembly uma vez pro scratchpad (~1,6 s, 528k linhas) e consulte com
+  `grep`. **Testar hipótese no pedal é o último recurso, não o primeiro.**
 
 ## O que ainda é incerto (não trate como fato)
 
 - **Os ranges dos parâmetros no `packages/profiles`** (gain 0–7, tone 0–15…)
-  vieram de fonte comunitária, **não do manual**. São provisórios até o dump de
-  memória do M1. Os nomes de preamp/gabinete, esses sim, saíram do manual
-  oficial e estão corretos.
-- **Se o byte `type` é 0-based ou 1-based** — o manual numera os slots de 1 a 9,
-  o profile usa 0 a 8.
-- **Nada do protocolo foi testado com hardware.** O Felipe ainda não tem o
-  pedal. `packages/protocol` é placeholder de propósito.
+  vieram de fonte comunitária, **não do manual**. O dump dos presets de fábrica
+  não contradisse nenhum deles, mas também não exercitou os extremos — continue
+  tratando como provisório. Os nomes de preamp/gabinete saíram do manual oficial
+  e estão corretos.
+- ~~**Se o byte `type` é 0-based ou 1-based**~~ — **resolvido**: é 0-based. No
+  dump, o preset A tem `type=7` (Wo Stone Coral OD) e `cab=4` (VHT), exatamente
+  os índices do profile.
+- **Onde ficam os parâmetros ao vivo.** O `0x05 0x80000000+` que o cuvave-midi
+  documenta lê só zeros e **não aparece no binário do CubeSuite**. O caminho de
+  RAM do software oficial é o bank `0x04`. Ver a ressalva na spec.
 
 ## Estado atual
 
@@ -76,16 +96,27 @@ sincronização no Firestore.
 - **No ar:** https://cuvave-studio.web.app (projeto Firebase `cuvave-studio`)
 - **Falta 1 passo manual:** ativar o provedor Google em Authentication no
   console do Firebase. Sem isso o botão "Entrar" não funciona.
-- **Roadmap:** M2–M6 em pé; **M1 (validar protocolo com o pedal físico) é o
-  bloqueio real** — nada da comunicação com o pedal existe até lá.
+- **Roadmap:** o **M1 fechou** (15/08/2026): codec implementado e testado,
+  leitura de presets funcionando, escrita gravando, formato do IR resolvido. A
+  aplicação de parâmetros ao áudio é limitação do hardware (ver acima), não
+  pendência. O próximo é o **M2** — ligar o app ao pedal —, e o M3 já tem alvo
+  conhecido.
+- **A bancada de testes** vive em `apps/web/bancada.html` + `src/bancada.ts`,
+  fora do build de produção. Abre em `localhost:5173/bancada.html` e serve pra
+  qualquer diagnóstico novo com o pedal: conecta, lê presets, faz diff de knobs,
+  mede áudio pela interface USB do próprio pedal e restaura os presets de
+  fábrica. Reaproveite em vez de improvisar no console.
 
 ## Como trabalhar aqui
 
 - **Idioma: português do Brasil**, inclusive em comentários e mensagens de
   commit.
 - **Commits direto na `main`**, sem branch e sem PR.
-- `npm run dev` (porta 5173) · `npm run build` · `npm run deploy` (build +
-  Firebase Hosting).
+- `npm run dev` (porta 5173) · `npm run build` · `npm test` (vitest) ·
+  `npm run deploy` (build + Firebase Hosting).
+- **O protocolo tem teste e os vetores são reais.** `packages/protocol` é
+  validado contra frames capturados do pedal e contra o algoritmo do binário
+  oficial. Mexeu no codec, rode `npm test` — não confie em inspeção visual.
 - **Outra IA (DeepSeek) trabalha neste mesmo repositório.** Antes de editar,
   confira `git log` e `git status` — arquivos podem ter mudado desde a última
   sessão. Em caso de conflito de edição simultânea, alinhe antes de sobrescrever.

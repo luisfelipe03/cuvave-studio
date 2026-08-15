@@ -76,12 +76,79 @@ no Mac, usado como oráculo de engenharia reversa
   8 bytes de significado ainda desconhecido — provável versão de firmware). No Web MIDI do
   Chrome o pedal aparece com nome genérico **"USB2.0 Device"** — a detecção não pode confiar
   só no nome
+- **WriteMemory responde ACK** (observado no pedal): tipo `0x00`, tamanho 1, conteúdo `0x00`.
+  **O `0x00` é sucesso** — não é erro: `CUSBConnect::make_responds_packet(buf, ok)` no binário
+  escreve `0` quando `ok` é verdadeiro e `1` quando é falso. A nomenclatura `ACK(false)` do
+  cuvave-midi induz ao erro; a confirmação auditiva continua valendo a pena, mas o protocolo
+  já diz que o pedal aceitou o comando
 - O CubeSuite é multi-dispositivo (Cube Baby, Baby Bass, Cube Baby AC, Looper, Synth,
   Micro…) — mesma ideia da arquitetura de profiles deste projeto
-- Frame SysEx: `F0 ... F7`, com codificação interna "bit-shift" de 7 bits
 - Frame decodificado: header `00 59` + tipo (1B) + tamanho LE (3B) + conteúdo + checksum
 - Comandos: `Init` (0x00), `NameVersion` (0x11), `Erase` (0x21),
   `WriteMemory` (0x22), `ReadMemory` (0x23)
+
+#### Codec (confirmado no binário — implementado em `packages/protocol`)
+
+O binário do CubeSuite **não está stripped**: tem os símbolos C++ de
+`CUSBConnect` inteiros, o que dispensa adivinhação. Três achados fecham o codec:
+
+- **Checksum** (`CUSBConnect::add_checksum`): soma os bytes **só do conteúdo**
+  (header, tipo e tamanho ficam de fora), com wrap de 8 bits, e devolve o
+  complemento (`sum ^ 0xFF`). Confere com os dois frames reais lidos do pedal:
+  conteúdo `00` → `FF`; conteúdo somando `0xB2` → `4D`
+- **Header** (`s_arrSysexHead`, lido de `__DATA,__data`): os literais `00 59`
+- **Empacotamento** (`u8ToMidi`): bitstream **little-endian de 7 bits** — acumula
+  bits do LSB pra cima e emite grupos de 7 —, embrulhado entre `F0` e `F7`.
+  **Não existe manufacturer ID**: o `00 32` que a documentação da comunidade
+  descreve como ID de fabricante é o header `00 59` já empacotado (`0x00` sai
+  como `00`; `0x59 << 1 = 0xB2`, e `0xB2 & 0x7F = 0x32`). Isso está coberto por
+  teste
+- **ACK** (`make_responds_packet(buf, ok)`): frame tipo `0x00`, tamanho 1,
+  conteúdo `ok ? 0x00 : 0x01`
+
+#### Fluxo de escrita (do `CCubeBabyIREditDlg::OnSave`)
+
+Gravar na área persistente **não é só mandar WriteMemory**. A sequência oficial é:
+
+1. `flash_erase(tipo, endereço)` — obrigatório antes de gravar
+2. `Sleep(100)` — 100 ms de espera depois do erase
+3. `flash_write(...)` seguido de `flash_read(...)` conferindo o que foi gravado
+   (é isso que `write_and_verify` faz)
+
+Já a área de RAM (`fx_ctrl_panel_write`) **não faz erase** — escreve direto.
+Isso explica por que comandos disparados em sequência, sem intervalo, perdem a
+resposta: o pedal está ocupado com o erase.
+
+#### Escrever parâmetro não muda o som (encerrado em 15/08/2026)
+
+**A escrita grava, mas o Cube Baby não a aplica ao áudio.** Isso foi investigado
+à exaustão com o pedal na mesa e está encerrado — não reabra sem informação nova.
+
+O que ficou provado:
+
+- **`WriteMemory` grava mesmo.** Escrever `0x40` no volume do preset C e reler
+  na hora devolve `0x40`; restaurar devolve o valor anterior. Não é o nosso
+  código que falha
+- **O som não muda por nenhum caminho testado.** Medido pela própria interface
+  de áudio USB do pedal, com o preset A no gain máximo (o chiado do preamp serve
+  de sinal): `0x05 @ 0x80000005`, `0x05 @ 0x05`, float no bank `0x04`,
+  `save_0` depois de escrever, e trocar de preset no footswitch pra forçar
+  recarga — todos com queda ≤ 1 dB, dentro da variação do ruído
+- **O comando de troca de modo é recusado.** `0x50` (de `make_mode_change_packet`)
+  responde com conteúdo `0x01` — falha, na convenção do próprio firmware —
+  enquanto todo o resto responde `0x00`
+
+E a explicação está no binário: `write_Effect`, `setEffectValue`,
+`onEffectValueChange` e `OnSaveEffect` existem em **`CCubeBabyCAIREditDlg`**
+(Cube Baby AC) e **`CCubeBabyJunIREditDlg`** (Jun), mas **não** em
+`CCubeBabyIREditDlg`, que é o deste pedal. A dialog do Cube Baby só edita IR e
+distância de microfone. **O fabricante nunca implementou edição de parâmetros
+por software neste modelo** — não há comando escondido a procurar.
+
+Consequência prática: o app lê presets e envia IR; a aplicação de parâmetros
+fica com os knobs do pedal. Se algum dia aparecer um firmware com `write_Effect`
+para este modelo, ou se valer a pena espionar o tráfego do CubeSuite com um
+monitor MIDI, aí sim vale reabrir.
 
 ### Mapa de memória
 
@@ -93,7 +160,19 @@ no Mac, usado como oráculo de engenharia reversa
 | `0x04 0x0768` | IR Distance (f32) — distância do microfone (100% = silêncio) |
 | `0x04 0x076C–0x0F68` | IR Data (RAM) |
 | `0x00 0x69000–0x71000` | IR Data (ROM) |
-| `0x05 0x80000000+` | Escrita de parâmetro ao vivo (RAM) |
+| `0x05 0x80000000+` | Escrita de parâmetro ao vivo (RAM) — **lê zeros** (write-only; o pedal aplica ao DSP mas não devolve leitura útil) |
+
+O primeiro byte de cada comando é o bank (`EFlashType` no CubeSuite).
+`fx_ctrl_panel_write` — o caminho que o software oficial usa pra RAM, incluindo
+todo o envio de IR — chama `flash_write_and_verify` com o tipo **fixo em 4**,
+que é o mesmo bank `0x04` das linhas de IR acima.
+
+**Ressalva sobre o `0x05 0x80000000+`**: esse endereço vem do cuvave-midi
+(comunidade), **não do binário oficial** — não há uma única referência a
+`0x80000000` no CubeSuite, e a única dialog de Cube Baby que ele tem
+(`CCubeBabyIREditDlg`) só edita IR, nunca os parâmetros do preset. Então "lê
+zeros" pode significar write-only, mas também pode significar que não é ali que
+o firmware guarda os parâmetros ao vivo.
 
 ### Estrutura de cada preset (13 bytes)
 
@@ -169,6 +248,24 @@ modulation, cabinet, ir_section, delay_section, tone_section
 - 8 posições de IR; importar sobrescreve o slot escolhido
 - **IR Distance** (f32 em `0x04 0x0768`): simulador de distância do microfone — mais perto = mais alto; 100% = silêncio
 
+**Formato exato do que vai pro pedal** (de `CCubeBabyIREditDlg::send_core_data`,
+no binário): o pedal **não recebe WAV**. Recebe **512 amostras `float32`**, e o
+envio é um bloco único de **2052 bytes** (`0x804`) começando em `0x04 0x0768`:
+
+```
+[0x0768] distância (float32)
+[0x076C] 512 × float32  ← a IR propriamente dita (2048 bytes)
+```
+
+A sequência que o software oficial faz:
+
+1. `fx_ctrl_panel_write(0x764, [0x00], 1)` — **desliga** a flag de IR
+2. `fx_ctrl_panel_write(0x768, buffer, 0x804)` — manda distância + 512 floats
+3. `fx_ctrl_panel_write(0x764, [0x01], 1)` — **religa** a flag
+
+Ou seja, a conversão que falta no M3 é: WAV 48kHz → 512 taps `float32`. Isso
+resolve a incógnita 3 (era "falta a conversão WAV → formato do pedal").
+
 #### Presets de fábrica (dump real, 14/08/2026)
 
 Valores lidos do pedal por ReadMemory (0x05 @ 0x0000, 45 bytes) — o manual
@@ -238,12 +335,21 @@ A IA funciona igual: o system prompt passa a descrever a cadeia do Tank-G
 
 1. Confirmação byte ↔ knob: nomes dos preamps são conhecidos (tabela acima); falta confirmar se o byte `type` = posição do knob (0–8) e o layout exato dos 13 bytes
 2. Intervalos de cada parâmetro por efeito (MOD 0–15 e ranges dos knobs mapeados; falta confirmar no dump de memória)
-3. Formato exato do IR: amostragem é 48kHz/24bit; falta a conversão WAV → f32 do pedal
+3. ~~Formato exato do IR~~ — **resolvido no binário**: 512 amostras `float32`
+   precedidas da distância (bloco de `0x804` bytes em `0x04 0x0768`), com a flag
+   `0x764` desligada durante o envio. Falta só escrever o conversor WAV → 512 taps
 4. ~~macOS reconhece o pedal como MIDI sem driver~~ — **resolvido**: CubeSuite usa CoreMIDI no Mac
 5. ~~O pedal aparece no Web MIDI do Chrome?~~ — **resolvido no desktop** (14/08/2026):
    aparece como "USB2.0 Device" e respondeu NameVersion com checksum válido.
    Falta confirmar Android/OTG
-6. Tipo de resposta `0x30` no fluxo de upload (ACK de escrita/erase?) — mapear no dump
+6. Tipo de resposta `0x30` no fluxo de upload (ACK de escrita/erase?) — ainda sem
+   explicação. O que o pedal responde a WriteMemory é tipo `0x00` com conteúdo
+   `0x00`, e isso já está entendido (é sucesso); o `0x30` aparece só no
+   `get_upload_responds`, um fluxo que ainda não exercitamos
+8. **Onde ficam os parâmetros ao vivo**: o `0x05 0x80000000+` do cuvave-midi lê
+   zeros e não existe no binário oficial. O caminho de RAM que o CubeSuite usa é
+   o bank `0x04` (`fx_ctrl_panel_write`), mas os offsets dos parâmetros do preset
+   dentro dele são desconhecidos — o binário só mostra os de IR (`0x764`+)
 7. Windows reconhece o pedal via Web MIDI em Chrome — suportado pelo Chromium
    (class-compliant USB MIDI nativo), mas validar com um amigo no primeiro build
    (é a plataforma real dos amigos; só o desenvolvedor usa Mac)
