@@ -55,17 +55,16 @@ engenharia reversa — não porque seja a plataforma-alvo.
 - **O SDK do Firebase (~550 kB) é carregado sob demanda.** Só baixa para quem
   clica em entrar ou já entrou. Não converta para import estático — o bundle
   inicial pularia de ~320 kB para ~846 kB para todo mundo.
-- **Escrita de parâmetro ao vivo FUNCIONA (16/08/2026).** A conclusão anterior
-  (15/08, "escrever não muda o som — encerrado") estava **errada**: escrever
-  volume=0x05 em `0x05 @ 0x80000005` com o preset A selecionado no footswitch
-  derrubou o nível em ~20 dB (medido pela interface USB do próprio pedal), e a
-  restauração trouxe de volta. O teste de 15/08 provavelmente rodou com o pedal
-  em bypass ou estado pós-experimentos. **Lição: selecionar o preset no
-  footswitch antes de medir.** O que ainda falta confirmar: se a persistência
-  (bank write de 48 bytes em `0x05 @ 0x0000`) aplica após trocar de preset ou
-  após power cycle. O comando `0x50` continua recusado (`0x01`), e o register
-  write `0x24` também é recusado até pelo CubeSuite (pista falsa — o fluxo
-  oficial usa só `0x22`). Ver a seção da spec antes de continuar os testes.
+- **A pedaleira é totalmente programável por software (16/08/2026).** A
+  conclusão de 15/08 ("escrever não muda o som") estava **errada**: o teste
+  daquele dia só escreveu bytes avulsos, que gravam mas não aplicam. O gatilho
+  é a **imagem completa do bank (48 bytes em `0x05 @ 0x0000`)**: aplica no DSP
+  na hora e **persiste na flash** (sobrevive a power cycle). Write vivo de
+  1 byte (`0x80000000 + slot*16 + offset`) também aplica na hora. Fluxo do
+  save = write vivo + bank inteiro + releitura (captura 020 do
+  MrGariZack/cubecontrol). **Lição: selecionar o preset no footswitch antes de
+  medir.** `0x50` e `0x24` são recusados até pro CubeSuite — pistas falsas; o
+  fluxo oficial usa só `0x22`. Ver a seção da spec.
 - **O binário do CubeSuite não está stripped — use-o antes de adivinhar.**
   `/Applications/CubeSuite.app/Contents/MacOS/CubeSuite` (x86_64) traz os
   símbolos C++ inteiros de `CUSBConnect`. `nm -C` lista a API, e `objdump -d`
@@ -97,11 +96,11 @@ sincronização no Firestore.
 - **No ar:** https://cuvave-studio.web.app (projeto Firebase `cuvave-studio`)
 - **Falta 1 passo manual:** ativar o provedor Google em Authentication no
   console do Firebase. Sem isso o botão "Entrar" não funciona.
-- **Roadmap:** o **M1 fechou** (15/08/2026): codec implementado e testado,
-  leitura de presets funcionando, formato do IR resolvido. Em 16/08 a escrita
-  viva de parâmetros foi confirmada com mudança de áudio (~20 dB) — falta
-  confirmar a persistência do bank write. O próximo é o **M2** — ligar o app
-  ao pedal —, e o M3 já tem alvo conhecido.
+- **Roadmap:** o **M1 fechou** (16/08/2026): codec implementado e testado,
+  leitura de presets funcionando, **escrita viva e persistência confirmadas
+  com mudança de áudio (~20 dB) e power cycle** — a pedaleira é programável
+  por software. O próximo é o **M2** — ligar o app ao pedal —, e o M3 já tem
+  alvo conhecido.
 - **A bancada de testes** vive em `apps/web/bancada.html` + `src/bancada.ts`,
   fora do build de produção. Abre em `localhost:5173/bancada.html` e serve pra
   qualquer diagnóstico novo com o pedal: conecta, lê presets, faz diff de knobs,

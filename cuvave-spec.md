@@ -123,33 +123,35 @@ Já a área de RAM (`fx_ctrl_panel_write`) **não faz erase** — escreve direto
 Isso explica por que comandos disparados em sequência, sem intervalo, perdem a
 resposta: o pedal está ocupado com o erase.
 
-#### Escrever parâmetro não muda o som (REABERTO em 16/08/2026)
+#### Escrita de parâmetros (RESOLVIDO em 16/08/2026)
 
-**Histórico:** em 15/08, uma manhã de testes mediu ≤1 dB de variação escrevendo
-em todos os caminhos (live `0x80000005`, persistente, float no bank 0x04,
-`save_0`, troca de preset) e concluiu que o DSP não aplica parâmetros — reforçado
-pelo binário (`write_Effect`/`OnSaveEffect` só existem nas dialogs AC/Jun).
+**A pedaleira é totalmente programável por software.** O caminho é:
 
-**MAS em 16/08 o reteste mediu mudança clara:** com os presets restaurados de
-fábrica e o preset A selecionado no footswitch, escrever volume=0x05 no endereço
-vivo `0x05 @ 0x80000005` **derrubou o nível em ~20 dB** (RMS 0.0029 → 0.0003,
-medido pela interface de áudio USB do pedal) e a restauração trouxe de volta
-(0.0039). O ACK foi `0x00` em todas as operações.
+1. **Write vivo** (`0x05 @ 0x80000000 + slot*16 + offset`, 1 byte): aplica no DSP
+   **imediatamente** — medido: volume 0x41 → 0x05 derrubou ~20 dB (RMS 0.0029 →
+   0.0003 via interface USB do pedal)
+2. **Write do bank inteiro** (`0x05 @ 0x00000000`, **48 bytes** = 3 slots × 16):
+   aplica no DSP **imediatamente** (mesmo sem write vivo) **e persiste na flash**
+   — sobreviveu a power cycle (medido: nível baixo após desligar/ligar)
+3. Bytes avulsos no bank **gravam mas não aplicam** — foi isso que enganou o
+   teste de 15/08 (que concluiu "não muda o som"): nunca escrevemos a imagem
+   completa de 48 bytes, que é o gatilho de aplicação+persistência
 
-O que provavelmente invalidou o teste de 15/08: o pedal estava em bypass ou
-num estado pós-experimentos onde o DSP não lia a área viva. **Lição:** sempre
-selecionar o preset no footswitch antes de medir.
+O fluxo de save do CubeSuite (captura 020 do MrGariZack/cubecontrol) é exatamente:
+write vivo de 1 byte + write do bank inteiro + releitura de conferência. Sem erase.
 
-Pendências pra fechar:
+Notas:
+- Comandos `0x50` (troca de modo) e `0x24` (registrador DSP) são **recusados**
+  (`ACK 0x01`) — o próprio CubeSuite recebe a recusa do `0x24` e segue com `0x22`;
+  são pistas falsas, o fluxo oficial usa só `0x22`
+- `0x12` vazio responde `01 00 00 00 00 00` — significado ainda desconhecido
+- Lição do teste errado: **selecionar o preset no footswitch antes de medir**;
+  o pedal em bypass não reage
+- Após reset de fábrica oficial, o preset A vem com `mix=0x1e` (30)
 
-1. **Persistência sem live write**: escrever só o bank (48B) e trocar de preset
-   no footswitch (A→B→A) — o DSP recarrega do bank?
-2. **Persistência com power cycle**: escrever só o bank e desligar/ligar o pedal
-3. Se (1) ou (2) aplicarem, o fluxo completo do app é: editar ao vivo → salvar
-   (bank write) → aplicado de imediato ou após troca/boot
-
-Consequência prática: **a edição de parâmetros ao vivo FUNCIONA neste modelo** —
-o app ganha o editor em tempo real; falta confirmar a persistência.
+**Fluxo do app (M2):** ler bank (48B) → editar (write vivo a cada knob) →
+salvar (write do bank inteiro). Leitura do bank devolve os 48 bytes com
+checksum; escrita aplica e persiste na hora.
 
 **Informação nova (16/08/2026) — vale UM reteste.** O projeto
 [MrGariZack/cubecontrol](https://github.com/MrGariZack/cubecontrol) documenta o
