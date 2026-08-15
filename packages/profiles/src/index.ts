@@ -77,7 +77,10 @@ export const cubeBabyProfile: DeviceProfile = {
   id: 'cube-baby',
   name: 'Cube Baby',
   transport: 'usb-midi',
-  detect: /cube\s*baby|CUVAVE/i,
+  // O Cube Baby costuma se anunciar como "USB2.0 Device" (nome genérico
+  // de device class USB MIDI) — não confiar só no nome da marca. A
+  // validação fina acontece no M1/M2 pelo protocolo (NameVersion 0x11).
+  detect: /cube\s*baby|CUVAVE|USB2\.0\s*Device/i,
   presetCount: 3,
   presetLabels: ['A', 'B', 'C'],
   parameters: [

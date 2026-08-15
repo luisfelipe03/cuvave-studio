@@ -39,20 +39,33 @@ function deezerJsonp(
     const cbName = `__cuvaveSongSearch${jsonpSeq++}`
     const script = document.createElement('script')
     let timer = 0
+    let settled = false
 
-    const finish = (fn: () => void) => {
+    // Nunca apaga o callback de cara: o <script> pode estar em voo e
+    // executaria depois do abort (ReferenceError no console). No lugar
+    // disso, marca como settled e troca por um no-op, apagando mais tarde.
+    const cleanup = () => {
       clearTimeout(timer)
-      delete (window as unknown as Record<string, unknown>)[cbName]
       signal?.removeEventListener('abort', onAbort)
       script.remove()
+      ;(window as unknown as Record<string, unknown>)[cbName] = () => {}
+      window.setTimeout(() => {
+        delete (window as unknown as Record<string, unknown>)[cbName]
+      }, 30_000)
+    }
+
+    const settle = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      cleanup()
       fn()
     }
 
     const onAbort = () =>
-      finish(() => reject(new DOMException('aborted', 'AbortError')))
+      settle(() => reject(new DOMException('aborted', 'AbortError')))
 
     ;(window as unknown as Record<string, unknown>)[cbName] = (raw: unknown) => {
-      finish(() => {
+      settle(() => {
         const data = raw as DeezerPayload
         resolve(
           (data.data ?? [])
@@ -66,9 +79,9 @@ function deezerJsonp(
       })
     }
 
-    script.onerror = () => finish(() => reject(new Error('Deezer falhou')))
+    script.onerror = () => settle(() => reject(new Error('Deezer falhou')))
     timer = window.setTimeout(
-      () => finish(() => reject(new Error('Deezer timeout'))),
+      () => settle(() => reject(new Error('Deezer timeout'))),
       TIMEOUT_MS,
     )
 
