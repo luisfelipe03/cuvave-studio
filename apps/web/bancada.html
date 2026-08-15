@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<title>Bancada — Cube Baby</title>
+<style>
+  :root {
+    --bg: #EDEFEE; --surface: #FFFFFF; --surface-2: #E5E9E8;
+    --ink: #131A1B; --ink-2: #47524F; --ink-3: #6F7B79;
+    --line: #D3D9D7; --line-strong: #B9C2C0;
+    --accent: #1D6B67; --accent-soft: #DBEAE8;
+    --ok: #3A6E44; --ok-soft: #DEEADF;
+    --warn: #86600F; --warn-soft: #F1E8D0;
+    --stop: #9A3A2D; --stop-soft: #F2DED9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0F1516; --surface: #161E1F; --surface-2: #1D2728;
+      --ink: #E9EEED; --ink-2: #A8B4B2; --ink-3: #7B8886;
+      --line: #293435; --line-strong: #3A4748;
+      --accent: #4FB2AB; --accent-soft: #14302E;
+      --ok: #7FBE8B; --ok-soft: #16291A;
+      --warn: #D7AC53; --warn-soft: #2B2314;
+      --stop: #DF8371; --stop-soft: #2D1915;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F1516; --surface: #161E1F; --surface-2: #1D2728;
+    --ink: #E9EEED; --ink-2: #A8B4B2; --ink-3: #7B8886;
+    --line: #293435; --line-strong: #3A4748;
+    --accent: #4FB2AB; --accent-soft: #14302E;
+    --ok: #7FBE8B; --ok-soft: #16291A;
+    --warn: #D7AC53; --warn-soft: #2B2314;
+    --stop: #DF8371; --stop-soft: #2D1915;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: clamp(1rem, 3vw, 2.5rem) clamp(1rem, 3vw, 2rem) 4rem;
+    background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.55;
+  }
+  .wrap { max-width: 58rem; margin: 0 auto; display: flex; flex-direction: column; gap: 2rem; }
+  h1, h2, h3 { font-family: Georgia, "Iowan Old Style", serif; font-weight: 600; margin: 0; text-wrap: balance; }
+  h1 { font-size: clamp(1.7rem, 4vw, 2.3rem); line-height: 1.15; }
+  h3 { font-size: 1.05rem; }
+  p { margin: 0; }
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: .7rem; letter-spacing: .16em; text-transform: uppercase; color: var(--accent);
+    margin: 0 0 .7rem;
+  }
+  header p.lede { color: var(--ink-2); margin-top: .8rem; max-width: 40rem; }
+
+  .barra {
+    display: flex; flex-wrap: wrap; gap: .7rem; align-items: center;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 1rem;
+    position: sticky; top: 0; z-index: 5;
+  }
+  .estado {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .78rem;
+    padding: .3rem .6rem; border-radius: 2px; background: var(--surface-2); color: var(--ink-3);
+  }
+  .estado.ok { background: var(--ok-soft); color: var(--ok); }
+
+  button {
+    font: inherit; font-size: .9rem; padding: .5rem .95rem; cursor: pointer;
+    background: var(--surface); color: var(--ink);
+    border: 1px solid var(--line-strong); border-radius: 3px;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.principal { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
+  button.principal:hover { opacity: .9; color: var(--bg); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  select { font: inherit; font-size: .88rem; padding: .45rem .6rem; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--surface); color: var(--ink); }
+
+  ol.cenarios { list-style: none; counter-reset: c; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .9rem; }
+  ol.cenarios > li {
+    counter-increment: c; position: relative; background: var(--surface);
+    border: 1px solid var(--line); border-left: 3px solid var(--risco, var(--line-strong));
+    border-radius: 3px; padding: 1.1rem 1.2rem 1.1rem 3.5rem;
+  }
+  ol.cenarios > li::before {
+    content: counter(c); position: absolute; left: 1.1rem; top: 1.15rem;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .8rem;
+    width: 1.6rem; height: 1.6rem; display: grid; place-items: center;
+    background: var(--accent-soft); color: var(--accent); border-radius: 50%;
+  }
+  li.seguro { --risco: var(--ok); }
+  li.reversivel { --risco: var(--warn); }
+  .topo-cenario { display: flex; flex-wrap: wrap; gap: .6rem; align-items: baseline; justify-content: space-between; }
+  .tag {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .66rem;
+    letter-spacing: .1em; text-transform: uppercase; padding: .2rem .5rem; border-radius: 2px; white-space: nowrap;
+  }
+  .tag.seguro { background: var(--ok-soft); color: var(--ok); }
+  .tag.reversivel { background: var(--warn-soft); color: var(--warn); }
+  .cenario-corpo { color: var(--ink-2); font-size: .93rem; margin: .5rem 0 .9rem; }
+  .voce { color: var(--ink); font-size: .93rem; background: var(--accent-soft); border-radius: 3px; padding: .6rem .8rem; margin-bottom: .9rem; }
+  .voce strong { color: var(--accent); }
+
+  .resultado {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .8rem;
+    margin-top: .8rem; padding: .55rem .75rem; border-radius: 2px;
+    background: var(--surface-2); color: var(--ink-3); display: block;
+  }
+  .resultado.ok { background: var(--ok-soft); color: var(--ok); }
+  .resultado.falhou { background: var(--stop-soft); color: var(--stop); }
+  .resultado.duvida { background: var(--warn-soft); color: var(--warn); }
+  /* o hidden do HTML precisa vencer o display da classe */
+  [hidden] { display: none !important; }
+  .linha-audio { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; margin-bottom: .9rem; }
+  .linha-audio select { max-width: 100%; }
+  .linha-audio input {
+    font: inherit; font-size: .88rem; padding: .45rem .6rem;
+    border: 1px solid var(--line-strong); border-radius: 3px;
+    background: var(--surface); color: var(--ink);
+  }
+  .linha-audio input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .julgamento { display: flex; gap: .6rem; flex-wrap: wrap; margin-top: .8rem; padding: .8rem; background: var(--warn-soft); border-radius: 3px; }
+  .julgamento p { font-size: .9rem; color: var(--warn); width: 100%; font-weight: 600; }
+
+  #log {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 3px;
+    padding: .9rem 1rem; height: 24rem; overflow: auto;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: .76rem; line-height: 1.65; white-space: pre-wrap; word-break: break-all;
+    font-variant-numeric: tabular-nums;
+  }
+  .linha { color: var(--ink-2); }
+  .linha.nota { color: var(--accent); }
+  .linha.erro { color: var(--stop); font-weight: 600; }
+  .log-topo { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin-bottom: .8rem; }
+  .log-topo h2 { margin-right: auto; font-size: 1.3rem; }
+  .aviso { background: var(--stop-soft); color: var(--stop); border-radius: 3px; padding: .9rem 1.1rem; font-size: .9rem; }
+  .conserto {
+    background: var(--warn-soft); border-left: 3px solid var(--warn); border-radius: 3px;
+    padding: 1.1rem 1.25rem; display: flex; flex-direction: column; gap: .7rem; align-items: flex-start;
+  }
+  .conserto h3 { color: var(--warn); }
+  .conserto p { font-size: .92rem; color: var(--ink-2); }
+  footer { color: var(--ink-3); font-size: .85rem; border-top: 1px solid var(--line); padding-top: 1.2rem; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; background: var(--surface-2); padding: .1em .35em; border-radius: 2px; font-size: .88em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">M1 · diagnóstico</p>
+    <h1>Bancada do Cube Baby</h1>
+    <p class="lede">
+      Ligue o pedal no USB, conecte, e vá clicando de cima pra baixo. Cada cenário diz o que
+      vai fazer antes de fazer, e escreve o resultado logo abaixo do botão. O log de tudo fica
+      no fim da página — é ele que você me manda.
+    </p>
+  </header>
+
+  <div class="barra">
+    <button id="conectar" class="principal">Conectar ao pedal</button>
+    <select id="portas" aria-label="Porta MIDI"></select>
+    <span id="estado" class="estado">não conectado</span>
+  </div>
+
+  <div class="conserto">
+    <h3>Devolver os presets ao original</h3>
+    <p>
+      Um bug desta bancada deixou o volume do preset A gravado em zero: clicar num cenário
+      antes do anterior terminar fazia a segunda execução restaurar o valor errado. Já está
+      corrigido — os botões agora travam enquanto um cenário roda. Este aqui reescreve os três
+      presets com os valores de fábrica e confere por leitura.
+    </p>
+    <button data-cenario="restaurar" class="principal" disabled>Restaurar A, B e C de fábrica</button>
+    <span class="resultado" id="res-restaurar">ainda não rodou</span>
+  </div>
+
+  <ol class="cenarios">
+
+    <li class="seguro">
+      <div class="topo-cenario">
+        <h3>O pedal se identifica?</h3>
+        <span class="tag seguro">só leitura</span>
+      </div>
+      <p class="cenario-corpo">
+        Pergunta o nome e a versão. Se responder, o protocolo inteiro está funcionando —
+        montagem, checksum e leitura da resposta.
+      </p>
+      <button data-cenario="identidade" disabled>Perguntar quem é</button>
+      <span class="resultado" id="res-identidade">ainda não rodou</span>
+    </li>
+
+    <li class="seguro">
+      <div class="topo-cenario">
+        <h3>Ler os 3 presets</h3>
+        <span class="tag seguro">só leitura</span>
+      </div>
+      <p class="cenario-corpo">
+        Lê a memória dos presets A, B e C, traduz para nomes de preamp e gabinete, e compara
+        com o dump de 14/08. Se algum tiver mudado, aparece marcado.
+      </p>
+      <button data-cenario="presets" disabled>Ler presets</button>
+      <span class="resultado" id="res-presets">ainda não rodou</span>
+    </li>
+
+    <li class="reversivel">
+      <div class="topo-cenario">
+        <h3>O teste do mudo</h3>
+        <span class="tag reversivel">RAM · reversível</span>
+      </div>
+      <p class="cenario-corpo">
+        Este é <em>a</em> pergunta em aberto do M1: o pedal responde "ok" para toda escrita, mas
+        isso não prova que o som mudou. Como o Cube Baby é interface de áudio USB, o computador
+        pode ouvir por você — <strong>não precisa de guitarra</strong>. Com o preset A no gain
+        máximo, o chiado do próprio circuito já serve de sinal. A bancada mede o nível, zera o
+        volume, mede de novo, compara e restaura tudo.
+      </p>
+      <p class="voce">
+        <strong>Antes de clicar:</strong> deixe o pedal no preset A e o volume dele num nível
+        normal. Clique em "Ouvir o pedal" e confirme que a entrada selecionada é a dele —
+        no seu Mac ela aparece como <code>USB-Audio</code> (SmartlinkTechnology).
+      </p>
+      <div class="linha-audio">
+        <button id="ouvir">Ouvir o pedal</button>
+        <span id="bloco-audio" hidden>
+          <select id="audios" aria-label="Entrada de áudio"></select>
+        </span>
+      </div>
+      <button data-cenario="mudo-medido" class="principal" disabled>Medir sem guitarra</button>
+      <button data-cenario="mudo" disabled>Testar de ouvido</button>
+      <div class="julgamento" id="julgamento-mudo" hidden>
+        <p>Toque a guitarra. E aí?</p>
+        <button id="mudo-sim">Ficou mudo</button>
+        <button id="mudo-nao">Continuou saindo som</button>
+      </div>
+      <span class="resultado" id="res-mudo">ainda não rodou</span>
+    </li>
+
+    <li class="reversivel">
+      <div class="topo-cenario">
+        <h3>A escrita grava? (sem áudio)</h3>
+        <span class="tag reversivel">reversível</span>
+      </div>
+      <p class="cenario-corpo">
+        <strong>Rode este primeiro.</strong> Todos os testes anteriores misturavam duas perguntas:
+        se o comando grava na memória, e se o pedal aplica isso no som. Este responde só a
+        primeira, e responde sem áudio nenhum: escreve um valor no volume do preset C, lê de
+        volta na hora, e devolve o original.
+      </p>
+      <p class="voce">
+        <strong>Não precisa de nada:</strong> nem guitarra, nem fone, nem volume. É um clique e
+        a resposta é digital.
+      </p>
+      <button data-cenario="prova" disabled>Escrever e reler</button>
+      <span class="resultado" id="res-prova">ainda não rodou</span>
+    </li>
+
+    <li class="reversivel">
+      <div class="topo-cenario">
+        <h3>Escrever + mandar aplicar</h3>
+        <span class="tag reversivel">reversível</span>
+      </div>
+      <p class="cenario-corpo">
+        Já sabemos que a escrita grava e que o som não muda — porque faltava avisar o pedal.
+        No CubeSuite, o botão de salvar dispara um comando à parte: um WriteMemory <em>sem
+        dados nenhum</em>, só com o endereço, que quer dizer "aplique o que está aí". Este
+        cenário escreve o volume, manda esse comando, mede, e devolve tudo como estava.
+      </p>
+      <p class="voce">
+        <strong>Deixe o pedal no preset A</strong> com o volume num nível que dê para medir. Se
+        tiver a guitarra por perto, melhor ainda — mas o chiado já serve.
+      </p>
+      <button data-cenario="commit" disabled>Escrever, aplicar e medir</button>
+      <span class="resultado" id="res-commit">ainda não rodou</span>
+    </li>
+
+    <li class="reversivel">
+      <div class="topo-cenario">
+        <h3>Escrever e recarregar no pé</h3>
+        <span class="tag reversivel">reversível</span>
+      </div>
+      <p class="cenario-corpo">
+        O software oficial <strong>não edita parâmetros deste modelo</strong> — só IR. Então não
+        existe comando de "aplicar ao vivo" para procurar: o firmware carrega o preset no
+        processador quando você o <em>seleciona</em>. Este cenário grava o volume zerado, e aí
+        você troca de preset no pé para forçar a recarga.
+      </p>
+      <p class="voce">
+        <strong>Como funciona:</strong> clique em gravar, depois <strong>pise no B e volte no
+        A</strong>, e clique no botão que aparecer. Se silenciar, achamos o caminho.
+      </p>
+      <button data-cenario="troca" disabled>Gravar volume zero</button>
+      <button id="troca-pronto" hidden>Já troquei de preset — medir</button>
+      <span class="resultado" id="res-troca">ainda não rodou</span>
+    </li>
+
+    <li class="reversivel">
+      <div class="topo-cenario">
+        <h3>Trocar o modo do pedal</h3>
+        <span class="tag reversivel">reversível</span>
+      </div>
+      <p class="cenario-corpo">
+        Uma hipótese que explica <em>todos</em> os fracassos anteriores: o pedal tem três modos,
+        e no LIVE o som sai da posição física dos knobs — o preset gravado é simplesmente
+        ignorado. O software oficial tem um comando dedicado para trocar de modo que a gente
+        nunca disparou. Aqui ele é mandado, e só então a escrita é testada.
+      </p>
+      <p class="voce">
+        <strong>Repare no pedal enquanto roda:</strong> se algum LED mudar, ou se os knobs
+        passarem a se comportar diferente, isso é informação valiosa — me conte.
+      </p>
+      <button data-cenario="modo" class="principal" disabled>Trocar modo e testar escrita</button>
+      <span class="resultado" id="res-modo">ainda não rodou</span>
+    </li>
+
+    <li class="reversivel">
+      <div class="topo-cenario">
+        <h3>O mudo no endereço certo</h3>
+        <span class="tag reversivel">reversível</span>
+      </div>
+      <p class="cenario-corpo">
+        O teste anterior escrevia em <code>0x80000005</code> e não mexeu no áudio. Este escreve
+        no endereço do preset em si — <code>0x05 @ 0x05</code>, sem aquele prefixo. A bancada lê
+        o volume antes, zera, mede, restaura o valor exato que estava lá e confere por leitura.
+      </p>
+      <p class="voce">
+        <strong>Por que é seguro:</strong> o <code>mix</code> do seu preset A passou de
+        <code>00</code> para <code>51</code> sozinho quando você girou os knobs — só é possível
+        se essa área puder ser reescrita à vontade. Não é memória que precisa ser apagada antes.
+      </p>
+      <button data-cenario="mudo-real" class="principal" disabled>Medir no endereço do preset</button>
+      <span class="resultado" id="res-mudo-real">ainda não rodou</span>
+    </li>
+
+    <li class="seguro">
+      <div class="topo-cenario">
+        <h3>Diff de knobs</h3>
+        <span class="tag seguro">só leitura</span>
+      </div>
+      <p class="cenario-corpo">
+        A ferramenta mais útil daqui pra frente, e a que descobre sozinha o que a gente vinha
+        adivinhando. Ela fotografa a memória inteira, você gira <strong>um</strong> knob do
+        pedal, e ela mostra exatamente quais endereços mudaram. Repetindo knob a knob, o mapa
+        de parâmetros se escreve sozinho.
+      </p>
+      <p class="voce">
+        <strong>Como usar:</strong> clique em "Fotografar", gire um único knob no pedal, escreva
+        qual foi no campo abaixo e clique em "Comparar". Depois repita com o próximo knob.
+      </p>
+      <div class="linha-audio">
+        <button data-cenario="diff" disabled>Fotografar memória</button>
+        <input id="knob" type="text" placeholder="qual knob? ex: VOLUME" aria-label="Nome do knob" />
+        <button id="comparar" hidden>Comparar</button>
+      </div>
+      <span class="resultado" id="res-diff">ainda não rodou</span>
+    </li>
+
+    <li class="reversivel">
+      <div class="topo-cenario">
+        <h3>Escrever float no DSP</h3>
+        <span class="tag reversivel">reversível</span>
+      </div>
+      <p class="cenario-corpo">
+        O teste que decide o M1. O diff provou que os controles ao vivo são <em>floats</em> no
+        bank <code>0x04</code> — não os bytes do preset. E é exatamente por aí que o software
+        oficial manda IR. Aqui a bancada lê o valor do endereço, escreve <code>0.0</code>,
+        confere por leitura, mede o áudio e devolve o valor original.
+      </p>
+      <p class="voce">
+        <strong>Qual endereço:</strong> use o que o diff apontou para o knob de volume. O padrão
+        abaixo (<code>06dc</code>) é o que mudou de 0.914 para 0.094 no seu último teste.
+      </p>
+      <div class="linha-audio">
+        <span class="mono">bank 0x04 @ 0x</span>
+        <input id="addr-float" type="text" value="06dc" size="6" aria-label="Endereço em hexadecimal" />
+        <button data-cenario="float" class="principal" disabled>Escrever 0.0 e medir</button>
+      </div>
+      <span class="resultado" id="res-float">ainda não rodou</span>
+    </li>
+
+    <li class="seguro">
+      <div class="topo-cenario">
+        <h3>Caçar os parâmetros ao vivo</h3>
+        <span class="tag seguro">só leitura</span>
+      </div>
+      <p class="cenario-corpo">
+        Se o teste do mudo falhar, é porque os parâmetros não moram no endereço que a gente
+        supunha. Aqui a bancada varre a área que o software oficial usa, procurando os 13 bytes
+        do preset A. Achando, sabemos exatamente onde escrever. Demora uns segundos.
+      </p>
+      <button data-cenario="cacar" disabled>Varrer e procurar</button>
+      <span class="resultado" id="res-cacar">ainda não rodou</span>
+    </li>
+
+    <li class="reversivel">
+      <div class="topo-cenario">
+        <h3>Escrever e ler de volta</h3>
+        <span class="tag reversivel">RAM · reversível</span>
+      </div>
+      <p class="cenario-corpo">
+        Escreve um valor conhecido, espera os 100 ms que o software oficial espera, e lê o
+        mesmo endereço. Se o valor voltar, a escrita está provada sem depender de ouvido.
+      </p>
+      <button data-cenario="ecoar" disabled>Escrever e conferir</button>
+      <span class="resultado" id="res-ecoar">ainda não rodou</span>
+    </li>
+
+  </ol>
+
+  <p class="aviso">
+    <strong>O que esta bancada não faz:</strong> gravar em preset de forma permanente. Isso exige
+    apagar um setor da memória (<code>flash_erase</code>) e é a única operação que pode estragar
+    alguma coisa. Fica de fora até você mandar.
+  </p>
+
+  <div>
+    <div class="log-topo">
+      <h2>Log</h2>
+      <button id="copiar">copiar log</button>
+      <button id="baixar">baixar .txt</button>
+      <button id="limpar">limpar</button>
+    </div>
+    <div id="log" role="log" aria-live="polite"></div>
+  </div>
+
+  <footer>
+    Tudo que sai e entra aparece no log: <code>→</code> enviado, <code>←</code> recebido,
+    <code>·</code> nota da bancada, <code>!</code> erro. Ao terminar, clique em "copiar log" e
+    cole na conversa — é assim que eu vejo o que o pedal respondeu.
+  </footer>
+
+</div>
+<script type="module" src="/src/bancada.ts"></script>
+</body>
+</html>
