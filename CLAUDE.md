@@ -72,6 +72,15 @@ engenharia reversa — não porque seja a plataforma-alvo.
   semântica do ACK e o formato do IR — tudo sem arriscar comando no hardware.
   Gere o disassembly uma vez pro scratchpad (~1,6 s, 528k linhas) e consulte com
   `grep`. **Testar hipótese no pedal é o último recurso, não o primeiro.**
+- **A dialog do nosso pedal no CubeSuite é a `CCubeBabyJunIREditDlg`.** O pedal
+  se identifica como **`Cube Baby*`** (com asterisco) e o dispatcher
+  `CMainDialog::OnFunctionSelected` manda esse nome pra dialog **Jun** — não pra
+  `CCubeBabyIREditDlg` (que é a do nome sem asterisco e realmente só edita IR).
+  Olhar a dialog errada foi o que produziu a conclusão furada de 15/08. Duas
+  lições que valem pra qualquer análise futura do binário: confira **qual**
+  classe atende o seu modelo antes de concluir "o fabricante não implementou", e
+  lembre que **`grep` por imediato não acha constante de 64 bits** — o
+  `0x80000000` está lá, montado com `movabsq` + `addq`.
 
 ## O que ainda é incerto (não trate como fato)
 

@@ -140,6 +140,29 @@ resposta: o pedal está ocupado com o erase.
 O fluxo de save do CubeSuite (captura 020 do MrGariZack/cubecontrol) é exatamente:
 write vivo de 1 byte + write do bank inteiro + releitura de conferência. Sem erase.
 
+**Confirmação no binário oficial (16/08/2026)** — o mesmo fluxo sai do CubeSuite
+instalado, não só das capturas de terceiros. E, de quebra, explica por que a
+investigação de 15/08 procurou no lugar errado:
+
+- O pedal do Felipe se identifica como **`Cube Baby*`** (com asterisco). Em
+  `CMainDialog::OnFunctionSelected`, esse nome abre a dialog
+  **`CCubeBabyJunIREditDlg`** — e não a `CCubeBabyIREditDlg`, que é a do nome
+  `Cube Baby` sem asterisco. São três dialogs de Cube Baby no binário (comum,
+  CA, Jun); a do Felipe **tem** edição de parâmetro. Só a comum é que de fato
+  não tem
+- **Knob → som**: `onEffectValueChange` → `write_Effect(offset, ptr, 1, 0)` →
+  `flash_write(EFlashType=5, 0x80000000 + slot*16 + offset, 1 byte)`. O
+  `0x80000000` é montado com `movabsq` + `addq`, por isso não aparece em busca
+  por imediato — daí a conclusão errada de que ele "não existia no binário"
+- **Botão Save do preset**: `OnSaveEffect()` → `write_Effect(0, ptr, 0x30, 1)` →
+  `flash_write(EFlashType=5, 0x0000, 48 bytes)`. Sem erase e sem `save_0`,
+  idêntico à captura
+- O `slot*16` sai de um `currentIndex() << 4` — confirma o stride de 16
+- A ordem dos sliders da UI oficial (VOLUME, IR CAB, REVERB, MIX, FB, TIME, MOD,
+  TONE, GAIN, TYPE) mapeia nos bytes `+5, +9, +3, +7, +4, +6, +8, +2, +1, +0` —
+  confirmação independente do layout de 13 bytes, e bate com o `gain` em
+  `0x80000001` da captura
+
 Notas:
 - Comandos `0x50` (troca de modo) e `0x24` (registrador DSP) são **recusados**
   (`ACK 0x01`) — o próprio CubeSuite recebe a recusa do `0x24` e segue com `0x22`;
@@ -212,12 +235,14 @@ O primeiro byte de cada comando é o bank (`EFlashType` no CubeSuite).
 todo o envio de IR — chama `flash_write_and_verify` com o tipo **fixo em 4**,
 que é o mesmo bank `0x04` das linhas de IR acima.
 
-**Ressalva sobre o `0x05 0x80000000+`**: esse endereço vem do cuvave-midi
-(comunidade), **não do binário oficial** — não há uma única referência a
-`0x80000000` no CubeSuite, e a única dialog de Cube Baby que ele tem
-(`CCubeBabyIREditDlg`) só edita IR, nunca os parâmetros do preset. Então "lê
-zeros" pode significar write-only, mas também pode significar que não é ali que
-o firmware guarda os parâmetros ao vivo.
+**Correção sobre o `0x05 0x80000000+` (16/08/2026)**: a versão anterior desta
+seção afirmava que o endereço vinha só do cuvave-midi, que não havia "uma única
+referência a `0x80000000` no CubeSuite" e que a única dialog de Cube Baby do
+binário só editava IR. **As três afirmações estavam erradas** — e foram elas que
+sustentaram a conclusão furada de 15/08. O endereço é o caminho oficial de
+edição ao vivo, na dialog `CCubeBabyJunIREditDlg` (ver "Escrita de parâmetros"
+acima). Lição: ausência em `grep` não é ausência no binário — constantes de
+64 bits são montadas em instruções separadas.
 
 ### Estrutura de cada preset (13 bytes)
 
