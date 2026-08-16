@@ -1,34 +1,72 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import type { DeviceProfile, PresetValues } from 'profiles'
-import { clampValues, normalizeSections } from 'profiles'
+import {
+  clampValues,
+  factoryPresets,
+  normalizeSections,
+  sectionForParam,
+} from 'profiles'
 import { initialPresets, savePresets } from '../lib/storage'
+import {
+  canRedo as histCanRedo,
+  canUndo as histCanUndo,
+  initHistory,
+  push,
+  redo as histRedo,
+  undo as histUndo,
+} from '../lib/history'
+import type { History } from '../lib/history'
+
+/** Arrasto de knob dispara dezenas de eventos; dentro dessa janela, a
+ *  mesma edição continua sendo um único passo de desfazer. */
+const COALESCE_MS = 700
 
 /**
- * Estado dos presets (A/B/C) do perfil ativo, com persistência local.
- * A sincronização com o pedal chega no M2; por enquanto os valores vivem
- * no localStorage (modo demo).
+ * Estado dos presets (A/B/C) do perfil ativo, com persistência local,
+ * histórico de desfazer/refazer e o modo de comparação.
+ *
+ * `saved` é a última imagem conhecida do que está gravado — vem da leitura
+ * do bank do pedal ou do último save. É contra ela que o Comparar alterna.
  */
 export function usePresets(profile: DeviceProfile) {
-  const [presets, setPresets] = useState<PresetValues[]>(() =>
-    initialPresets(profile),
+  const [hist, setHist] = useState<History<PresetValues[]>>(() =>
+    initHistory(initialPresets(profile)),
   )
   const [active, setActive] = useState(0)
   const [dirty, setDirty] = useState(false)
-  // Snapshot anterior a uma aplicação vinda da IA, pra ter volta.
-  const [undoable, setUndoable] = useState<{
-    presets: PresetValues[]
-    label: string
-  } | null>(null)
+  const [saved, setSaved] = useState<PresetValues[] | null>(null)
+  const [comparing, setComparing] = useState(false)
+  // Rótulo do banner "preset substituído pela IA", que oferece a volta.
+  const [aiLabel, setAiLabel] = useState<string | null>(null)
+  const lastEdit = useRef<{ key: string; at: number } | null>(null)
 
-  const activePreset = presets[active]
+  const presets = hist.present
+  // Enquanto compara, a tela mostra o que está gravado, não o que se editou.
+  const shown = comparing && saved ? saved : presets
+  const activePreset = shown[active]
 
   const setParam = useCallback(
     (paramId: string, value: number) => {
-      setPresets((prev) =>
-        prev.map((p, i) =>
-          i === active ? clampValues(profile, { ...p, [paramId]: value }) : p,
-        ),
-      )
+      setComparing(false)
+      const key = `${active}:${paramId}`
+      const now = Date.now()
+      const continuing =
+        lastEdit.current?.key === key && now - lastEdit.current.at < COALESCE_MS
+      lastEdit.current = { key, at: now }
+
+      setHist((h) => {
+        const next = h.present.map((p, i) => {
+          if (i !== active) return p
+          // A flag de seção acompanha o parâmetro na MESMA transação: se
+          // fossem duas, o desfazer teria que ser clicado duas vezes — a
+          // primeira só revertendo o flag, sem efeito visível.
+          const merged: PresetValues = { ...p, [paramId]: value }
+          const sec = sectionForParam(paramId, value)
+          if (sec) merged[sec.id] = sec.value
+          return clampValues(profile, merged)
+        })
+        return continuing ? { ...h, present: next } : push(h, next)
+      })
       setDirty(true)
     },
     [active, profile],
@@ -37,31 +75,82 @@ export function usePresets(profile: DeviceProfile) {
   /** Escreve um preset gerado num slot específico, sem tocar nos outros. */
   const applyPreset = useCallback(
     (index: number, values: PresetValues) => {
-      setPresets((prev) => {
-        setUndoable({ presets: prev, label: profile.presetLabels[index] })
-        return prev.map((p, i) =>
-          i === index ? normalizeSections(profile, values) : p,
-        )
-      })
+      setComparing(false)
+      lastEdit.current = null
+      setHist((h) =>
+        push(
+          h,
+          h.present.map((p, i) =>
+            i === index ? normalizeSections(profile, values) : p,
+          ),
+        ),
+      )
+      setAiLabel(profile.presetLabels[index])
       setActive(index)
       setDirty(true)
     },
     [profile],
   )
 
-  const undoApply = useCallback(() => {
-    setUndoable((prev) => {
-      if (prev) setPresets(prev.presets)
-      return null
-    })
-  }, [])
+  /** Copia o preset do slot ativo para outro slot. */
+  const copyToSlot = useCallback(
+    (to: number) => {
+      setComparing(false)
+      lastEdit.current = null
+      setHist((h) =>
+        push(
+          h,
+          h.present.map((p, i) => (i === to ? { ...h.present[active] } : p)),
+        ),
+      )
+      setDirty(true)
+    },
+    [active],
+  )
 
-  const dismissUndo = useCallback(() => setUndoable(null), [])
+  /** Devolve os três slots aos presets de fábrica (dump real do pedal). */
+  const restoreFactory = useCallback(() => {
+    setComparing(false)
+    lastEdit.current = null
+    setHist((h) => push(h, factoryPresets(profile)))
+    setDirty(true)
+  }, [profile])
+
+  /**
+   * Desfazer/refazer devolvem os presets que passaram a valer, pra quem
+   * chamou poder empurrá-los pro pedal.
+   */
+  const undo = useCallback((): PresetValues[] | null => {
+    if (!histCanUndo(hist)) return null
+    const next = histUndo(hist)
+    setHist(next)
+    setComparing(false)
+    setAiLabel(null)
+    setDirty(true)
+    lastEdit.current = null
+    return next.present
+  }, [hist])
+
+  const redo = useCallback((): PresetValues[] | null => {
+    if (!histCanRedo(hist)) return null
+    const next = histRedo(hist)
+    setHist(next)
+    setComparing(false)
+    setDirty(true)
+    lastEdit.current = null
+    return next.present
+  }, [hist])
+
+  const dismissUndo = useCallback(() => setAiLabel(null), [])
 
   /** Substitui tudo sem criar ponto de desfazer — usado pela sincronização. */
   const replaceAll = useCallback(
     (next: PresetValues[]) => {
-      setPresets(next.map((p) => clampValues(profile, p)))
+      const clamped = next.map((p) => clampValues(profile, p))
+      setHist(initHistory(clamped))
+      setSaved(clamped)
+      setComparing(false)
+      lastEdit.current = null
       setDirty(false)
     },
     [profile],
@@ -69,6 +158,8 @@ export function usePresets(profile: DeviceProfile) {
 
   const persist = useCallback(() => {
     savePresets(profile, presets)
+    setSaved(presets)
+    setComparing(false)
     setDirty(false)
   }, [presets, profile])
 
@@ -80,10 +171,23 @@ export function usePresets(profile: DeviceProfile) {
   const commitLocal = useCallback(
     (next: PresetValues[]) => {
       savePresets(profile, next)
+      setSaved(next)
+      setComparing(false)
       setDirty(false)
     },
     [profile],
   )
+
+  /**
+   * Liga/desliga a comparação com o que está gravado. Devolve os presets
+   * que devem estar tocando agora, pra quem chamou mandar pro pedal.
+   */
+  const toggleCompare = useCallback((): PresetValues[] | null => {
+    if (!saved) return null
+    const next = !comparing
+    setComparing(next)
+    return next ? saved : presets
+  }, [comparing, saved, presets])
 
   return useMemo(
     () => ({
@@ -91,13 +195,19 @@ export function usePresets(profile: DeviceProfile) {
       active,
       activePreset,
       dirty,
-      undoLabel: undoable?.label ?? null,
-      /** snapshot anterior à última aplicação (IA/playlist), pra desfazer */
-      undoSnapshot: undoable?.presets ?? null,
+      comparing,
+      canCompare: saved !== null,
+      canUndo: histCanUndo(hist),
+      canRedo: histCanRedo(hist),
+      undoLabel: aiLabel,
       setActive,
       setParam,
       applyPreset,
-      undoApply,
+      copyToSlot,
+      restoreFactory,
+      undo,
+      redo,
+      toggleCompare,
       dismissUndo,
       replaceAll,
       persist,
@@ -108,10 +218,17 @@ export function usePresets(profile: DeviceProfile) {
       active,
       activePreset,
       dirty,
-      undoable,
+      comparing,
+      saved,
+      hist,
+      aiLabel,
       setParam,
       applyPreset,
-      undoApply,
+      copyToSlot,
+      restoreFactory,
+      undo,
+      redo,
+      toggleCompare,
       dismissUndo,
       replaceAll,
       persist,

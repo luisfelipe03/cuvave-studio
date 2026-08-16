@@ -30,6 +30,8 @@ interface AiPanelProps {
   onLibraryChange: (entries: LibraryEntry[]) => void
   onApply: (slot: number, values: PresetValues) => void
   onOpenSettings: () => void
+  /** Os shows/playlists moram na seção Biblioteca; aqui só quando pedido. */
+  showPlaylists?: boolean
 }
 
 type AiState =
@@ -67,6 +69,7 @@ export function AiPanel({
   onLibraryChange,
   onApply,
   onOpenSettings,
+  showPlaylists = true,
 }: AiPanelProps) {
   const [song, setSong] = useState('')
   const [hint, setHint] = useState('')
@@ -543,12 +546,14 @@ export function AiPanel({
         )}
       </div>
 
-      <PlaylistSection
-        profile={profile}
-        library={library}
-        playlists={playlists}
-        onApply={onApply}
-      />
+      {showPlaylists && (
+        <PlaylistSection
+          profile={profile}
+          library={library}
+          playlists={playlists}
+          onApply={onApply}
+        />
+      )}
     </section>
   )
 }

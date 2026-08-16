@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   cubeBabyProfile,
+  factoryPresets,
   normalizeSections,
-  profiles,
   sectionForParam,
 } from 'profiles'
 import type { PresetValues } from 'profiles'
@@ -20,7 +20,6 @@ import {
   saveGuitar,
 } from './lib/storage'
 import type { LibraryEntry } from './lib/storage'
-import { DeviceBar } from './components/DeviceBar'
 import { Home } from './components/Home'
 import { EditorScreen } from './components/EditorScreen'
 import { SettingsDialog } from './components/SettingsDialog'
@@ -87,9 +86,10 @@ export default function App() {
   const applyParam = useCallback(
     (paramId: string, value: number) => {
       const slot = presetsState.active
+      // O estado cuida do parâmetro e do flag de seção numa transação só
+      // (um passo de desfazer); aqui só espelhamos os dois no pedal.
       presetsState.setParam(paramId, value)
       const sec = sectionForParam(paramId, value)
-      if (sec) presetsState.setParam(sec.id, sec.value)
       if (pedalReady) {
         const offset = profile.bankOrder.indexOf(paramId)
         if (offset >= 0) pedal.writeLive(slot, offset, value)
@@ -143,15 +143,47 @@ export default function App() {
     [presetsState, pedalReady, pushSlotToPedal, profile],
   )
 
-  /** Desfazer uma aplicação também empurra os valores antigos pro pedal. */
-  const undoApply = useCallback(() => {
-    const prev = presetsState.undoSnapshot
-    const slot = lastAppliedSlot.current
-    presetsState.undoApply()
-    if (pedalReady && prev && slot !== null && prev[slot]) {
-      void pushSlotToPedal(slot, prev)
-    }
-  }, [presetsState, pedalReady, pushSlotToPedal])
+  /**
+   * Empurra um slot inteiro como escrita viva — aplica no DSP na hora, sem
+   * gravar na flash. É o que desfazer/refazer/comparar usam: igual a mexer
+   * no knob, o que vale é o Salvar.
+   */
+  const pushLive = useCallback(
+    (index: number, values: PresetValues) => {
+      if (!pedalReady) return
+      const v = normalizeSections(profile, values)
+      profile.bankOrder.forEach((id, offset) => {
+        pedal.writeLive(index, offset, v[id] ?? 0)
+      })
+    },
+    [pedalReady, pedal, profile],
+  )
+
+  /** Desfazer/refazer devolvem os presets que passaram a valer. */
+  const undo = useCallback(() => {
+    const next = presetsState.undo()
+    if (next) pushLive(presetsState.active, next[presetsState.active])
+    return next
+  }, [presetsState, pushLive])
+
+  const redo = useCallback(() => {
+    const next = presetsState.redo()
+    if (next) pushLive(presetsState.active, next[presetsState.active])
+    return next
+  }, [presetsState, pushLive])
+
+  /** Comparar troca o que o pedal está tocando entre gravado e editado. */
+  const toggleCompare = useCallback(() => {
+    const shown = presetsState.toggleCompare()
+    if (shown) pushLive(presetsState.active, shown[presetsState.active])
+    return shown
+  }, [presetsState, pushLive])
+
+  /** Restaurar de fábrica também precisa soar na hora. */
+  const restoreFactory = useCallback(() => {
+    presetsState.restoreFactory()
+    pushLive(presetsState.active, factoryPresets(profile)[presetsState.active])
+  }, [presetsState, pushLive, profile])
 
   // O editor recebe o estado com os métodos enfaixados no pedal.
   const editorState = useMemo(
@@ -159,10 +191,22 @@ export default function App() {
       ...presetsState,
       setParam: applyParam,
       applyPreset,
-      undoApply,
+      undo,
+      redo,
+      toggleCompare,
+      restoreFactory,
       persist,
     }),
-    [presetsState, applyParam, applyPreset, undoApply, persist],
+    [
+      presetsState,
+      applyParam,
+      applyPreset,
+      undo,
+      redo,
+      toggleCompare,
+      restoreFactory,
+      persist,
+    ],
   )
 
   const unlocked = demo || device.status.kind === 'connected'
@@ -185,43 +229,26 @@ export default function App() {
 
   return (
     <div className="min-h-[100dvh]">
-      {showEditor && (
-        <DeviceBar
+      {showEditor ? (
+        <EditorScreen
           profile={profile}
-          profiles={profiles}
-          status={device.status}
+          presetsState={editorState}
+          apiKey={apiKey}
+          guitar={guitar}
+          library={library}
+          playlists={playlistsState}
+          connected={device.status.kind === 'connected'}
           demo={demo}
-          user={cloud.user}
-          syncStatus={cloud.status}
           pedalStatus={pedal.status}
           pedalError={pedal.error}
+          user={cloud.user}
+          syncStatus={cloud.status}
           onSignIn={cloud.signIn}
           onSignOut={cloud.signOut}
-          onHome={goHome}
+          onLibraryChange={setLibrary}
           onOpenSettings={() => setSettingsOpen(true)}
+          onLeave={goHome}
         />
-      )}
-
-      {showEditor ? (
-        <>
-          <EditorScreen
-            profile={profile}
-            presetsState={editorState}
-            apiKey={apiKey}
-            guitar={guitar}
-            library={library}
-            playlists={playlistsState}
-            onLibraryChange={setLibrary}
-            onOpenSettings={() => setSettingsOpen(true)}
-          />
-          <p className="mx-auto max-w-[1400px] px-4 pb-8 text-xs text-faint sm:px-6">
-            {device.status.kind === 'connected'
-              ? pedal.status === 'error'
-                ? `Erro ao falar com o pedal: ${pedal.error ?? 'desconhecido'}`
-                : 'Pedal conectado — knobs editam ao vivo; Salvar grava no pedal.'
-              : 'Modo demo — nenhum pedal conectado. Presets ficam salvos neste navegador.'}
-          </p>
-        </>
       ) : (
         <Home
           status={device.status}

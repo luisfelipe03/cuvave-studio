@@ -46,6 +46,12 @@ export interface DeviceProfile {
    * (dump real do M1). Inclui os flags de seção, que são campos de verdade.
    */
   bankOrder: string[]
+  /**
+   * Presets de fábrica, um array de valores por slot na mesma ordem do
+   * `bankOrder` — dump real do pedal, não invenção. É o que o "Restaurar
+   * de fábrica" grava.
+   */
+  factoryBank: number[][]
   irFormat: {
     /** taxa de amostragem esperada pelo pedal (Hz) */
     sampleRate: number
@@ -152,6 +158,14 @@ export const cubeBabyProfile: DeviceProfile = {
     'delay_section',
     'tone_section',
   ],
+  // Dump dos presets de fábrica lido do pedal do Felipe (M1, 14/08/2026).
+  // Confere com o que o CubeSuite mostra no slot A: volume 65, ir_cab 4,
+  // reverb 5, mix 0, fb 52, time 20, mod 7, tone 9, gain 7, type 7.
+  factoryBank: [
+    [0x07, 0x07, 0x09, 0x05, 0x34, 0x41, 0x14, 0x00, 0x07, 0x04, 1, 1, 1],
+    [0x04, 0x02, 0x05, 0x05, 0x2c, 0x46, 0x17, 0x1e, 0x07, 0x05, 1, 1, 1],
+    [0x01, 0x07, 0x07, 0x05, 0x34, 0x6f, 0x14, 0x0c, 0x05, 0x02, 1, 1, 1],
+  ],
   irFormat: {
     sampleRate: 48000,
     slots: 8,
@@ -183,6 +197,21 @@ export function clampValues(
     out[param.id] = Math.min(param.max, Math.max(param.min, Math.round(v)))
   }
   return out
+}
+
+/**
+ * Presets de fábrica como valores do app. Mesma conversão que o bank do
+ * pedal usa: cada posição do slot é o parâmetro de mesmo índice em
+ * `bankOrder`.
+ */
+export function factoryPresets(profile: DeviceProfile): PresetValues[] {
+  return profile.factoryBank.map((slot) => {
+    const raw: PresetValues = {}
+    profile.bankOrder.forEach((id, i) => {
+      raw[id] = slot[i] ?? 0
+    })
+    return clampValues(profile, raw)
+  })
 }
 
 export function defaultPresetValues(profile: DeviceProfile): PresetValues {
